@@ -17,7 +17,7 @@ pub(crate) fn facing_states(
     yaw: f32,
 ) -> Option<Map<String, Value>> {
     let (keys, rotation) = match fact.placement {
-        assets::facts::PlacementRule::Dispenser => (
+        _ if dispenser_like(fact) => (
             &[P::FacingDirection.name(), P::TriggeredBit.name()][..],
             0.0,
         ),
@@ -39,6 +39,54 @@ pub(crate) fn facing_states(
         set_bit(&mut states, P::TriggeredBit.name(), false)?;
     }
     Some(states)
+}
+
+/// Dispensers, and droppers, which the registry gives no placement rule but draws with the same
+/// facing front, so they place the same way.
+fn dispenser_like(fact: assets::facts::BlockFact) -> bool {
+    fact.placement == assets::facts::PlacementRule::Dispenser
+        || (fact.placement == assets::facts::PlacementRule::Unresolved
+            && fact.render.kind == assets::facts::BlockRenderKind::Dispenser)
+}
+
+/// Where the player must stand for a six-facing block (piston, dispenser, dropper or observer)
+/// to get its planned facing, when the predicted facing differs only because of where they
+/// stand. Vertical facings follow the player's position, not their view: within two blocks
+/// horizontally, eyes more than two blocks above the cell or below it. `None` for other blocks
+/// and for a horizontal plan the view can still turn to.
+pub fn standing_hint(
+    fact: assets::facts::BlockFact,
+    name: &str,
+    planned: &str,
+    predicted: &str,
+) -> Option<&'static str> {
+    let observer = name == "minecraft:observer";
+    if !(observer || dispenser_like(fact) || fact.placement == assets::facts::PlacementRule::Piston)
+    {
+        return None;
+    }
+    // The body direction behind a facing: the facing itself, or its opposite for an observer,
+    // which faces away from the player.
+    let body = |canonical: &str| {
+        let states: Map<String, Value> = serde_json::from_str(canonical).ok()?;
+        let value = &states
+            .get("minecraft:facing_direction")
+            .or_else(|| states.get(P::FacingDirection.name()))?["value"];
+        let face = match value.as_str() {
+            Some(name) => ["down", "up", "north", "south", "west", "east"]
+                .iter()
+                .position(|candidate| *candidate == name)? as u8,
+            None => u8::try_from(value.as_u64()?).ok()?,
+        };
+        Some(if observer { face ^ 1 } else { face })
+    };
+    match (body(planned)?, body(predicted)?) {
+        (1, 1) | (0, 0) => None,
+        (1, _) => Some("stand within 2 blocks of it with your eyes over 2 blocks above it"),
+        (0, _) => Some("stand within 2 blocks of it with it above your eyes"),
+        (_, 0 | 1) => Some("step over 2 blocks away or level with it so it faces sideways"),
+        _ => None,
+    }
 }
 
 /// Placement-controlled states for the exact vanilla registry identities.
@@ -185,6 +233,85 @@ mod tests {
             assert_eq!(body_facing([4, 4, 0], player, yaw, 0.0), Some(dispenser));
             assert_eq!(body_facing([4, 4, 0], player, yaw, 180.0), Some(piston));
         }
+    }
+
+    fn fact(name: &str) -> assets::facts::BlockFact {
+        let protocol = assets::active_content_registry_protocol();
+        let breg = assets::pinned_block_registry_bytes();
+        let records = assets::read_registry_for_protocol(breg, protocol).unwrap();
+        let collisions = crate::movement::PhysicsCollisionRegistries::from_assets(
+            breg,
+            &records,
+            include_bytes!("../../assets/data/block-physics-v2225.bin"),
+            protocol,
+        )
+        .unwrap();
+        let mode = assets::NetworkIdMode::Sequential;
+        collisions.block_facts(
+            mode,
+            collisions.block_default_runtime_id(mode, name).unwrap(),
+        )
+    }
+
+    #[test]
+    fn droppers_place_like_dispensers() {
+        let dropper = fact("minecraft:dropper");
+        let canonical = r#"{"facing_direction":{"type":"int","value":0},"triggered_bit":{"type":"byte","value":1}}"#;
+        let player = ([0.2, 4.0, 0.2], [0.8, 5.8, 0.8]);
+        let placed = facing_states(dropper, canonical, [4, 4, 0], player, 90.0).unwrap();
+        assert_eq!(placed["facing_direction"]["value"], 5);
+        assert_eq!(placed["triggered_bit"]["value"], 0);
+        let below = facing_states(dropper, canonical, [0, 3, 0], player, 90.0).unwrap();
+        assert_eq!(below["facing_direction"]["value"], 1);
+        assert!(
+            facing_states(fact("minecraft:chest"), canonical, [4, 4, 0], player, 90.0).is_none()
+        );
+    }
+
+    #[test]
+    fn standing_hints_name_where_to_stand_for_vertical_facings() {
+        let piston = fact("minecraft:piston");
+        let facing =
+            |value: u8| format!(r#"{{"facing_direction":{{"type":"int","value":{value}}}}}"#);
+        assert!(
+            standing_hint(piston, "minecraft:piston", &facing(1), &facing(2))
+                .unwrap()
+                .contains("above it")
+        );
+        assert!(
+            standing_hint(piston, "minecraft:piston", &facing(0), &facing(1))
+                .unwrap()
+                .contains("above your eyes")
+        );
+        assert!(
+            standing_hint(piston, "minecraft:piston", &facing(3), &facing(0))
+                .unwrap()
+                .contains("sideways")
+        );
+        assert_eq!(
+            standing_hint(piston, "minecraft:piston", &facing(3), &facing(2)),
+            None
+        );
+        let observer = fact("minecraft:observer");
+        let named = |value: &str| {
+            format!(r#"{{"minecraft:facing_direction":{{"type":"string","value":"{value}"}}}}"#)
+        };
+        // An observer faces away from the player, so facing down needs the eyes above it.
+        assert!(
+            standing_hint(
+                observer,
+                "minecraft:observer",
+                &named("down"),
+                &named("north")
+            )
+            .unwrap()
+            .contains("above it")
+        );
+        let chest = fact("minecraft:chest");
+        assert_eq!(
+            standing_hint(chest, "minecraft:chest", &facing(1), &facing(2)),
+            None
+        );
     }
 
     #[test]

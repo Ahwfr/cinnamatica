@@ -17,6 +17,27 @@ pub(crate) struct BuildInput {
     pub(super) expected: Option<mod_host::CreativePlacementOffer>,
     pub(super) interaction: Option<mod_host::CreativePlacementOffer>,
     pub(super) air_place: bool,
+    /// Set for a dry run: [`prepare`] fills it in and stops before any effect.
+    pub(super) report: Option<PredictionReport>,
+}
+
+/// What a dry run of [`prepare`] found: the block state it predicts and where, and `places`
+/// or why the press would not place.
+#[derive(Debug, Default)]
+pub(super) struct PredictionReport {
+    pub predicted: Option<([i32; 3], Option<String>, Option<String>)>,
+    pub verdict: Option<String>,
+}
+
+impl PredictionReport {
+    /// Records the first verdict; later ones are consequences of it.
+    fn verdict(report: &mut Option<Self>, verdict: impl FnOnce() -> String) {
+        if let Some(report) = report
+            && report.verdict.is_none()
+        {
+            report.verdict = Some(verdict());
+        }
+    }
 }
 
 /// A proposal freezes selection, placement and inventory effects before its first send.
@@ -58,6 +79,7 @@ impl BuildInput {
             expected: None,
             interaction: None,
             air_place: false,
+            report: None,
         }
     }
 }
@@ -91,19 +113,33 @@ pub(super) fn held_placement_block(
 }
 
 /// [`held_placement_block`], plus the blocks of items Fast Place builds with that carry no
-/// block, such as signs, banners and heads.
+/// block: signs, banners, heads, hoppers and campfires from the route table, and the crop a
+/// seed plants or the block a block placer places from the session's item data, such as a
+/// sweet berry bush from sweet berries.
 pub(super) fn fast_place_block(
     collisions: &PhysicsCollisionRegistries,
     stream: &chunk_pipeline::WorldStream,
+    ui: &client_ui::ui_runtime::UiRuntime,
     block_id: i32,
     item_identifier: impl Fn() -> Option<std::sync::Arc<str>>,
 ) -> Option<u32> {
+    let mode = stream.network_id_mode();
     held_placement_block(collisions, stream, block_id, &item_identifier).or_else(|| {
-        gameplay::placement_items::routed_item_block(
-            collisions,
-            stream.network_id_mode(),
-            &item_identifier()?,
-        )
+        let identifier = item_identifier()?;
+        gameplay::placement_items::routed_item_block(collisions, mode, &identifier).or_else(|| {
+            let components = ui.item_components(&identifier)?;
+            let name = components
+                .seed
+                .as_ref()
+                .map(|seed| std::sync::Arc::clone(&seed.crop_result))
+                .or_else(|| components.block_placer.clone())?;
+            let name = if name.contains(':') {
+                name.to_string()
+            } else {
+                format!("minecraft:{name}")
+            };
+            collisions.block_default_runtime_id(mode, &name)
+        })
     })
 }
 
@@ -160,9 +196,12 @@ fn prepare(
         .inventory_ledger(player_runtime)
         .authoritative_slot_revision(server_selection.slot)
         .unwrap_or(0);
-    observed.selection = runtime
-        .inventory
-        .selection(&server_selection, inventory_revision);
+    // A dry run keeps the stack it was given and leaves the count prediction alone.
+    if attempt.report.is_none() {
+        observed.selection = runtime
+            .inventory
+            .selection(&server_selection, inventory_revision);
+    }
     let caps = caps.for_edit(stream.authority().held_edit_item(
         &observed.selection.item,
         protocol::ItemBlockList::CanPlaceOn,
@@ -174,6 +213,10 @@ fn prepare(
         .item_use_profile(observed.selection.item.network_id())
         .cooldown;
     let ready = cooldown.is_none_or(|cooldown| item_use.cooldown_ready(cooldown, tick));
+    let report = &mut attempt.report;
+    if !ready {
+        PredictionReport::verdict(report, || "waits for the item's cooldown".into());
+    }
     let identifier = stream
         .authority()
         .item_identifier(observed.selection.item.network_id());
@@ -233,7 +276,9 @@ fn prepare(
         let placed_block = paired.or_else(|| {
             let block_id = observed.selection.item.block_runtime_id();
             if attempt.expected.is_some() {
-                fast_place_block(&context.collisions, stream, block_id, || identifier.clone())
+                fast_place_block(&context.collisions, stream, &context.ui, block_id, || {
+                    identifier.clone()
+                })
             } else {
                 held_placement_block(&context.collisions, stream, block_id, || identifier.clone())
             }
@@ -252,6 +297,16 @@ fn prepare(
                     attempt.view,
                 )
             });
+        if let Some(report) = report.as_mut()
+            && let Some(placement) = &placement
+        {
+            let mode = stream.network_id_mode();
+            report.predicted = Some((
+                placement.position,
+                context.collisions.block_identifier(mode, placement.block).map(str::to_owned),
+                context.collisions.block_canonical_state(mode, placement.block).map(str::to_owned),
+            ));
+        }
         let paired_fits = paired.is_some_and(|block| {
             ready && caps.can_build && local_use != LocalUse::Interact
                 && observed.selection.item.count() > 0
@@ -271,8 +326,14 @@ fn prepare(
                 && local_use != LocalUse::Interact
                 && observed.selection.item.count() > 0
                 && placed_block.is_some_and(|block| {
-                    context.collisions.block_facts(mode, block).placement
-                        == assets::facts::PlacementRule::Unresolved
+                    // A block without a placement rule, or one placed as it is (an azalea)
+                    // whose support the predictor does not model: neither can come out in
+                    // another state, so the server decides.
+                    matches!(
+                        context.collisions.block_facts(mode, block).placement,
+                        assets::facts::PlacementRule::Unresolved
+                            | assets::facts::PlacementRule::Identity
+                    )
                         && context.collisions.block_identifier(mode, block).is_some_and(|name| {
                             unpredicted_face_places(&context.collisions, mode, name, expected,
                                 observed.target.face)
@@ -302,9 +363,31 @@ fn prepare(
                 && surroundings.destination(observed.target.position, observed.target.face).0 == expected.position;
             if supported_door || unpredicted {
                 local_use = LocalUse::Place;
+                PredictionReport::verdict(report, || if unpredicted {
+                    "places; the server decides the state (no placement rule)".into()
+                } else {
+                    "places the door; the server decides the state".into()
+                });
             } else {
             let Some(placement) = placement.as_ref() else {
-                if refusal_once(format!("p|{}|{:?}|{:?}|{}", expected.name, expected.position,
+                PredictionReport::verdict(report, || {
+                    let block = placed_block
+                        .and_then(|block| context.collisions.block_identifier(mode, block));
+                    match block {
+                        None => "the held item places no block".into(),
+                        Some(_) if local_use == LocalUse::Interact => {
+                            "the click would use the clicked block".into()
+                        }
+                        Some(block) if context.collisions.block_facts(mode,
+                            placed_block.unwrap_or_default()).placement
+                            == assets::facts::PlacementRule::Unresolved =>
+                        {
+                            format!("{block} has no placement rule and this face or view does not place it")
+                        }
+                        Some(block) => format!("cannot predict {block} from this face"),
+                    }
+                });
+                if report.is_none() && refusal_once(format!("p|{}|{:?}|{:?}|{}", expected.name, expected.position,
                     observed.target.position, observed.target.face)) {
                     bevy::log::info!(block = %expected.name, states = %expected.states,
                         ghost = ?expected.position, support = ?observed.target.position,
@@ -328,8 +411,32 @@ fn prepare(
                         super::orientation::strict_state_matches(expected, actual)
                     }))
             {
+                PredictionReport::verdict(report, || {
+                    if !matches!(game_mode, Some(PlayerGameMode::Creative | PlayerGameMode::Survival)) {
+                        "not in Creative or Survival".into()
+                    } else if observed.selection.item.count() == 0 {
+                        "no item to place".into()
+                    } else if placement.position != expected.position {
+                        format!("would place at {:?}, not the ghost", placement.position)
+                    } else if actual_name != Some(expected.name.as_str()) {
+                        format!("would place {}, so it refuses", actual_name.unwrap_or("an unknown block"))
+                    } else if !world.is_air(expected.position).unwrap_or(false) {
+                        "the ghost cell is occupied".into()
+                    } else if let Some(hint) = actual_states.and_then(|actual| {
+                        gameplay::placement_facing::standing_hint(
+                            context.collisions.block_facts(mode, placement.block),
+                            &expected.name,
+                            &expected.states,
+                            actual,
+                        )
+                    }) {
+                        format!("wrong facing: {hint}")
+                    } else {
+                        "the predicted state differs from the plan, so it refuses".into()
+                    }
+                });
                 let (yaw, pitch, _) = attempt.view.rotation().to_euler(bevy::math::EulerRot::YXZ);
-                if refusal_once(format!("d|{}|{:?}|{:?}|{}|{:?}", expected.name, expected.position,
+                if report.is_none() && refusal_once(format!("d|{}|{:?}|{:?}|{}|{:?}", expected.name, expected.position,
                     observed.target.position, observed.target.face, actual_states)) {
                     bevy::log::info!(block = %expected.name, states = %expected.states, ghost = ?expected.position,
                         actual_name, actual_states, destination = ?placement.position,
@@ -464,6 +571,23 @@ fn prepare(
     .ok()?;
     let (local_use, takes_press, destination, predicted, repeats_while_held, paired) =
         prepared.value?;
+    if let Some(report) = attempt.report.as_mut() {
+        if report.verdict.is_none() {
+            report.verdict = Some(match local_use {
+                LocalUse::Place => "places".into(),
+                LocalUse::Interact => "the click would use the clicked block".into(),
+                other => format!("does not place ({other:?})"),
+            });
+        }
+        let _ = (
+            takes_press,
+            destination,
+            predicted,
+            repeats_while_held,
+            paired,
+        );
+        return None;
+    }
     let identity = observed.ray.world_identity.merge(&prepared.identity).ok()?;
     let local_runtime_id = stream.local_player_runtime_id();
     // The tick has not simulated yet, so its swing reads the effects in force before it.
@@ -501,6 +625,27 @@ fn prepare(
             paired,
         },
     })
+}
+
+/// Runs [`prepare`] for a dry run whose `attempt.report` collects the result; nothing is sent,
+/// selected or changed.
+pub(super) fn dry_run(
+    player_runtime: &client_state::PlayerRuntime,
+    context: &BlockUseContext,
+    runtime: &mut BlockUseRuntime,
+    item_use: &mut client_interaction::item_use::ItemUseRuntime,
+    movement: &MovementTicker,
+    attempt: &mut BuildInput,
+) {
+    debug_assert!(attempt.report.is_some());
+    let _ = prepare(
+        player_runtime,
+        context,
+        runtime,
+        item_use,
+        movement,
+        attempt,
+    );
 }
 
 /// Prepares one build and commits its effects only after successful transport admission.

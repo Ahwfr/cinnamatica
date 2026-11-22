@@ -992,6 +992,35 @@ interface item-use {
     /// Limits normal block placement to the admitted schematic offer for this frame.
     /// Renews while a guide is active. Requires item-use and inventory grants.
     set-placement-lock: func(enabled: bool) -> result<_, string>;
+    /// A dry run of a use press on the previous frame's offer: the target, item, aim and
+    /// predicted block the press would use, sent nowhere.
+    record placement-prediction {
+        /// The offered cell and the block built there, a double slab as its full block.
+        ghost: tuple<s32, s32, s32>,
+        block: string,
+        states: string,
+        /// The item the press would use, and `hotbar`, `inventory`, `creative` or `none`.
+        item: option<string>,
+        source: string,
+        /// The clicked block and face after aim correction.
+        support: option<tuple<s32, s32, s32>>,
+        face: option<u8>,
+        /// Wire pitch and yaw sent with the press when aim correction turns the view.
+        facing: option<tuple<f32, f32>>,
+        /// The press clicks into the ghost cell itself rather than a support face.
+        air-click: bool,
+        /// The press holds sneak first so an interactive support places instead of opening.
+        sneak: bool,
+        /// The block state the client predicts the press places, and where.
+        predicted-position: option<tuple<s32, s32, s32>>,
+        predicted-block: option<string>,
+        predicted-states: option<string>,
+        /// `places`, or why the press would not place.
+        verdict: string,
+    }
+    /// The prediction for the previous frame's offer. Reading it asks for the next frame's.
+    /// Requires item-use and inventory grants.
+    read-placement-prediction: func() -> result<option<placement-prediction>, string>;
 }
 
 /// Bounded local terrain reads. The queries a callback reads become its subscriptions, which the

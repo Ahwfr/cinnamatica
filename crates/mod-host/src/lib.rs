@@ -129,6 +129,26 @@ pub struct CreativePlacementOffer {
     pub repeat_while_held: bool,
 }
 
+/// The client's dry run of a use press on the previous frame's offer; see the
+/// `read-placement-prediction` import.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PlacementPrediction {
+    pub ghost: [i32; 3],
+    pub block: String,
+    pub states: String,
+    pub item: Option<String>,
+    pub source: &'static str,
+    pub support: Option<[i32; 3]>,
+    pub face: Option<u8>,
+    pub facing: Option<[f32; 2]>,
+    pub air_click: bool,
+    pub sneak: bool,
+    pub predicted_position: Option<[i32; 3]>,
+    pub predicted_block: Option<String>,
+    pub predicted_states: Option<String>,
+    pub verdict: String,
+}
+
 /// Successfully committed local interaction requests, consumed once per frame.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct InteractionOutput {

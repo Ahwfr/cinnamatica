@@ -50,14 +50,14 @@ pub fn wall_form(
 }
 
 /// The block a stack of `identifier` places when the stack names no block runtime ID: the
-/// route table's block, or the same-named block for block-entity-drawn blocks such as heads
+/// route table's block (the same-named one for items such as hoppers), or the same-named block for block-entity-drawn blocks such as heads
 /// and hanging signs, whose items carry no block.
 pub fn routed_item_block(
     collisions: &PhysicsCollisionRegistries,
     mode: NetworkIdMode,
     identifier: &str,
 ) -> Option<u32> {
-    if let Some(block) = assets::facts::item_block_route(identifier)
+    if let Some(block) = assets::facts::item_places_block(identifier)
         .and_then(|name| collisions.block_default_runtime_id(mode, name))
     {
         return Some(block);

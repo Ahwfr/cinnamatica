@@ -28,7 +28,7 @@ mod item;
 pub use dropped_item::{DroppedItemPresentation, dropped_item_presentation};
 mod item_carrier;
 pub use block_aux::block_item_has_aux_states;
-pub use item_route::item_block_route;
+pub use item_route::{item_block_route, item_places_block};
 pub use item::{
     ARROW_IDENTIFIER, ArmourMaterial, BANNER_IDENTIFIER, BRUSH_IDENTIFIER, ContainerRoles,
     EMPTY_BUCKET_IDENTIFIER, FILLED_MAP_IDENTIFIER, FIREWORK_ROCKET_IDENTIFIER,

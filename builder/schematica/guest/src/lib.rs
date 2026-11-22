@@ -6,6 +6,7 @@ wit_bindgen::generate!({
 
 mod actions;
 mod browser;
+mod debug_info;
 mod library;
 mod menu;
 mod native_bindings;
@@ -60,7 +61,61 @@ thread_local! {
     /// Where the guide of a copied selection goes: the box's minimum corner.
     static ADOPT_ORIGIN: Cell<Option<[i32; 3]>> = const { Cell::new(None) };
     static RUNTIME: RefCell<(Runtime, Vec<&'static [u8]>, Options, Option<usize>)> =
-        const { RefCell::new((Runtime::Start, Vec::new(), Options { hold_place: false, placement_lock: false, auto_layer: true, paste_destroy: false, structure_paste: false, textured: true, assist: false, fast_place: false, strict_place: false, correct_aim: false, bridge_place: true, lightness: DEFAULT_LIGHTNESS, library_revision: 0, deleted_entries: Vec::new(), remember_placement: true, saved_placements: BTreeMap::new(), tool_item: true }, None)) };
+        const { RefCell::new((Runtime::Start, Vec::new(), Options { hold_place: false, placement_lock: false, auto_layer: true, paste_destroy: false, structure_paste: false, textured: true, target_info: TargetInfo::Off, fast_place: false, strict_place: false, correct_aim: false, bridge_place: true, lightness: DEFAULT_LIGHTNESS, library_revision: 0, deleted_entries: Vec::new(), remember_placement: true, saved_placements: BTreeMap::new(), tool_item: true }, None)) };
+}
+
+/// What the "Target info" setting shows for the targeted block.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum TargetInfo {
+    #[default]
+    Off,
+    /// One line: the material, its coordinates and how to place it.
+    Regular,
+    /// A panel with the planned block, the real block and Fast Place's prediction.
+    Debug,
+}
+
+impl TargetInfo {
+    const ALL: [TargetInfo; 3] = [TargetInfo::Off, TargetInfo::Regular, TargetInfo::Debug];
+
+    /// The settings file value.
+    fn key(self) -> &'static str {
+        match self {
+            TargetInfo::Off => "off",
+            TargetInfo::Regular => "regular",
+            TargetInfo::Debug => "debug",
+        }
+    }
+
+    /// The Settings tab caption.
+    pub(crate) fn title(self) -> &'static str {
+        match self {
+            TargetInfo::Off => "Off",
+            TargetInfo::Regular => "Regular",
+            TargetInfo::Debug => "Debug",
+        }
+    }
+
+    /// The next value of the Settings tab cycle.
+    pub(crate) fn next(self) -> Self {
+        let index = Self::ALL
+            .iter()
+            .position(|value| *value == self)
+            .unwrap_or(0);
+        Self::ALL[(index + 1) % Self::ALL.len()]
+    }
+
+    /// Reads the saved value; older settings files hold only the on/off `assist` switch.
+    fn saved(settings: &serde_json::Value) -> Self {
+        settings["target_info"]
+            .as_str()
+            .and_then(|key| Self::ALL.into_iter().find(|value| value.key() == key))
+            .unwrap_or(if settings["assist"].as_bool().unwrap_or(false) {
+                TargetInfo::Regular
+            } else {
+                TargetInfo::Off
+            })
+    }
 }
 
 /// The "Ghost lightness" cycle: percent the ghost blocks blend toward light blue.
@@ -89,7 +144,7 @@ struct Options {
     paste_destroy: bool,
     structure_paste: bool,
     textured: bool,
-    assist: bool,
+    target_info: TargetInfo,
     fast_place: bool,
     strict_place: bool,
     correct_aim: bool,
@@ -113,7 +168,8 @@ impl Options {
                 "auto_layer": self.auto_layer,
                 "paste_destroy": self.paste_destroy,
                 "structure_paste": self.structure_paste,
-                "textured":self.textured, "assist":self.assist, "fast_place": self.fast_place,
+                "textured":self.textured, "fast_place": self.fast_place,
+                "assist": self.target_info != TargetInfo::Off, "target_info": self.target_info.key(),
                 "correct_aim": self.correct_aim,
                 "strict_place": self.strict_place,
                 "placement_lock": self.placement_lock,
@@ -164,7 +220,7 @@ impl Guest for Schematica {
                 options.paste_destroy = value["paste_destroy"].as_bool().unwrap_or(false);
                 options.structure_paste = value["structure_paste"].as_bool().unwrap_or(false);
                 options.textured = value["textured"].as_bool().unwrap_or(options.textured);
-                options.assist = value["assist"].as_bool().unwrap_or(options.assist);
+                options.target_info = TargetInfo::saved(&value);
                 options.fast_place = value["fast_place"].as_bool().unwrap_or(options.fast_place);
                 options.strict_place = value["strict_place"].as_bool().unwrap_or(false);
                 options.placement_lock = value["placement_lock"].as_bool().unwrap_or(false);
@@ -436,6 +492,8 @@ struct Viewer {
     cancel_structure: Option<(u64, i32)>,
     paste: Option<paste::Paste>,
     last_label: String,
+    /// Target info's Debug panel.
+    debug: debug_info::DebugPanel,
     tool: tool::ToolState,
     /// A copied selection waiting to replace the schematic.
     adopt: Option<(Schematic, BTreeMap<String, u64>)>,
@@ -512,6 +570,7 @@ impl Viewer {
             cancel_structure: None,
             paste: None,
             last_label: String::new(),
+            debug: Default::default(),
             tool: Default::default(),
             adopt: None,
             menu_chorded: false,
@@ -693,7 +752,10 @@ impl Viewer {
         {
             self.paste_notice = Some((format!("{block} at {pos:?}"), 0.05));
         }
-        if self.options.assist && alt && keys.keys_pressed.iter().any(|key| key == "KeyU") {
+        if self.options.target_info != TargetInfo::Off
+            && alt
+            && keys.keys_pressed.iter().any(|key| key == "KeyU")
+        {
             let message = self.aimed_block().map_or_else(
                 || "Cinnamatica | Aim at a planned block".into(),
                 |(block, pos)| format!("Cinnamatica | {} at {pos:?}", block.name),
@@ -802,6 +864,7 @@ impl Viewer {
             }
             let _ = item_use::set_placement_repeat(self.options.hold_place);
         }
+        self.keep_prediction();
         if publish_highlights && budget::remaining_fuel() >= 600_000 {
             self.publish_item_highlights();
             self.highlight_delay = 5;

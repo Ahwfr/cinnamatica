@@ -9,6 +9,22 @@ use {
     gameplay::mining::{creative_reach, survival_reach},
 };
 
+/// Whether a crosshair hit is the support face a press places `offer` from: the face adjoining
+/// the ghost, the top face for an aim-corrected door, and for V2 the half the hit point makes.
+pub(super) fn on_planned_face(
+    offer: &mod_host::CreativePlacementOffer,
+    hit: &FrozenBlockObservation,
+) -> bool {
+    (!offer.correct_aim || !offer.name.ends_with("_door") || hit.target.face == 1)
+        && (!offer.strict_state
+            || super::orientation::support_produces_half(
+                super::orientation::planned_placement_half(offer),
+                hit.target.face,
+                hit.target.relative_hit[1],
+            ))
+        && placement_cell(hit.target.position, hit.target.face) == offer.position
+}
+
 /// Finds a real support face within reach, or a verified empty target for V2.
 pub(super) fn observe_bridge_target(
     player: &client_state::PlayerRuntime,

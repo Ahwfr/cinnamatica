@@ -84,16 +84,7 @@ pub(crate) fn press(
                 .creative
                 .as_ref()
                 .and_then(|policy| policy.offer.as_ref())
-                .is_some_and(|offer| {
-                    (!offer.correct_aim || !offer.name.ends_with("_door") || hit.target.face == 1)
-                        && (!offer.strict_state
-                            || super::orientation::support_produces_half(
-                                super::orientation::planned_placement_half(offer),
-                                hit.target.face,
-                                hit.target.relative_hit[1],
-                            ))
-                        && placement_cell(hit.target.position, hit.target.face) == offer.position
-                })
+                .is_some_and(|offer| super::target::on_planned_face(offer, hit))
         });
         if !on_planned_face
             && let Some(bridge) = super::target::observe_bridge_target(
@@ -134,6 +125,30 @@ pub(crate) fn press(
             .and_then(|policy| policy.offer.as_ref())
             .is_some_and(|offer| offer.strict_state);
         if strict_offer && !on_planned_face {
+            // No support to place from: the click still puts the planned block in the hand.
+            if let Some(observed) = observed.as_ref()
+                && creative::try_start(
+                    &mut player,
+                    &mut context,
+                    observed,
+                    &mut movement,
+                    false,
+                    ItemUseTrigger::PlayerInput,
+                )
+            {
+                creative::resume(
+                    &mut player,
+                    &mut context,
+                    &mut runtime,
+                    &mut item_use,
+                    &mut swings,
+                    &mut movement,
+                    Some(pick),
+                    input.edge.buttons.held(Action::Use),
+                    mode,
+                    input.context.identity,
+                );
+            }
             return false;
         }
         let Some(observed) = observed else {

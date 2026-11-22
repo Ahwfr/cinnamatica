@@ -97,6 +97,7 @@ impl State {
             pending_packet_delay: _,
             packet_delay_writes,
             gameplay_facts: _,
+            placement_prediction: _,
             controls,
             world: _,
             camera_policy: _,

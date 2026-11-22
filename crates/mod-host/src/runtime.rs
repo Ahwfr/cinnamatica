@@ -5,6 +5,7 @@ pub(super) mod input_host;
 pub(crate) mod legacy_input;
 mod observations;
 mod output_lifecycle;
+mod placement;
 mod presentation;
 mod recovery;
 mod suspension;
@@ -113,6 +114,9 @@ pub(crate) struct State {
     packet_delay_writes: u32,
     /// Client facts delivered before this frame's callback and dropped after it.
     gameplay_facts: crate::GameplayFacts,
+    /// The client's latest placement dry run, delivered before each frame and kept across the
+    /// frame's start so the callback reads it.
+    placement_prediction: Option<crate::PlacementPrediction>,
     controls: controls::ControlState,
     world: gameplay::WorldState,
     camera_policy: camera::CameraPolicy,
@@ -169,6 +173,7 @@ impl State {
             pending_packet_delay: None,
             packet_delay_writes: 0,
             gameplay_facts: Default::default(),
+            placement_prediction: None,
             controls: controls::ControlState::new(settings),
             world: gameplay::WorldState::default(),
             camera_policy: camera::CameraPolicy::default(),
@@ -702,16 +707,6 @@ impl Instance {
     /// Reads the committed use pulse before output collection, without consuming it.
     pub(super) fn use_pulse_requested(&self) -> bool {
         self.is_active() && self.store.data().item_use_policy.pulse
-    }
-
-    pub(super) fn placement_locked(&self) -> bool {
-        self.store.data().item_use_policy.locked
-    }
-
-    pub(super) fn creative_placement_offer(&self) -> Option<&crate::CreativePlacementOffer> {
-        self.is_active()
-            .then(|| self.store.data().item_use_policy.placement.as_ref())
-            .flatten()
     }
 
     /// Current-frame relative camera heading from a successful focused gameplay callback.

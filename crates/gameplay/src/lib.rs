@@ -11,7 +11,7 @@ pub mod ordered_interactions;
 mod placement_connections;
 mod placement_custom;
 mod placement_doors;
-mod placement_facing;
+pub mod placement_facing;
 mod placement_multiface;
 #[cfg(test)]
 mod placement_oracle;

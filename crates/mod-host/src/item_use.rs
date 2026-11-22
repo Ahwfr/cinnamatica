@@ -12,6 +12,9 @@ pub(super) struct ItemUsePolicy {
     /// The current frame's committed pulse, read before the action filter runs.
     pub pulse: bool,
     pub placement: Option<crate::CreativePlacementOffer>,
+    pending_prediction_wanted: bool,
+    /// A committed callback read the prediction, so the client prepares the next one.
+    pub prediction_wanted: bool,
 }
 
 impl ItemUsePolicy {
@@ -20,6 +23,7 @@ impl ItemUsePolicy {
         self.pulse = std::mem::take(&mut self.pending_pulse) && gameplay;
         self.placement = self.pending_placement.take().filter(|_| gameplay);
         self.locked = std::mem::take(&mut self.pending_lock) && gameplay;
+        self.prediction_wanted = std::mem::take(&mut self.pending_prediction_wanted) && gameplay;
     }
 }
 
@@ -77,6 +81,37 @@ impl cinnabar::extension::item_use::Host for State {
         };
         offer.repeat_while_held = enabled;
         Ok(Ok(()))
+    }
+
+    fn read_placement_prediction(
+        &mut self,
+    ) -> Result<Result<Option<cinnabar::extension::item_use::PlacementPrediction>, String>> {
+        self.controls.budget(false)?;
+        if !self.grants.item_use || !self.grants.inventory || self.snapshot.is_none() {
+            return Ok(Err(
+                "Placement prediction requires gameplay, item use and inventory".into(),
+            ));
+        }
+        self.item_use_policy.pending_prediction_wanted = true;
+        let tuple = |[x, y, z]: [i32; 3]| (x, y, z);
+        Ok(Ok(self.placement_prediction.clone().map(|prediction| {
+            cinnabar::extension::item_use::PlacementPrediction {
+                ghost: tuple(prediction.ghost),
+                block: prediction.block,
+                states: prediction.states,
+                item: prediction.item,
+                source: prediction.source.to_owned(),
+                support: prediction.support.map(tuple),
+                face: prediction.face,
+                facing: prediction.facing.map(|[pitch, yaw]| (pitch, yaw)),
+                air_click: prediction.air_click,
+                sneak: prediction.sneak,
+                predicted_position: prediction.predicted_position.map(tuple),
+                predicted_block: prediction.predicted_block,
+                predicted_states: prediction.predicted_states,
+                verdict: prediction.verdict,
+            }
+        })))
     }
 
     fn set_placement_lock(&mut self, enabled: bool) -> Result<Result<(), String>> {
@@ -142,5 +177,49 @@ impl State {
             repeat_while_held: true,
         });
         Ok(Ok(()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cinnabar::extension::item_use::Host as _;
+
+    /// A prediction delivered before a frame reaches that frame's callback, which runs on a
+    /// transaction copy of the state, and reading it asks for the next one.
+    #[test]
+    fn a_delivered_prediction_is_read_in_the_frame_and_asks_for_the_next() {
+        let grants = crate::ModGrants {
+            item_use: true,
+            inventory: true,
+            ..Default::default()
+        };
+        let mut state = State::new(grants, String::new(), Default::default());
+        state.snapshot = Some(crate::GameplaySnapshot {
+            session: 1,
+            dimension: 0,
+            eye: crate::GameplayVector3 {
+                x: 0.,
+                y: 64.,
+                z: 0.,
+            },
+            yaw: 0.,
+            pitch: 0.,
+            attack_held: false,
+            frame_seconds: 0.016,
+        });
+        state.placement_prediction = Some(crate::PlacementPrediction {
+            ghost: [1, 2, 3],
+            block: "minecraft:stone".into(),
+            verdict: "places".into(),
+            source: "hotbar",
+            ..Default::default()
+        });
+        let mut frame = state.frame_transaction();
+        let read = frame.read_placement_prediction().unwrap().unwrap().unwrap();
+        assert_eq!(read.ghost, (1, 2, 3));
+        assert_eq!(read.verdict, "places");
+        frame.item_use_policy.commit(true);
+        assert!(frame.item_use_policy.prediction_wanted);
     }
 }

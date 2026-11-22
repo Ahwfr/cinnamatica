@@ -22,6 +22,10 @@ pub(crate) struct CreativePlacement {
     recent: Vec<String>,
     pending: Option<Pending>,
     sneak: SneakHold,
+    /// A mod reads the placement prediction, so each frame prepares one.
+    pub preview_wanted: bool,
+    /// The latest dry run of a press on the offer, for the mod's debug readout.
+    pub preview: Option<mod_host::PlacementPrediction>,
 }
 
 /// Sneak Fast Place holds so a click on an interactive support (a chest, furnace, lever or
@@ -79,6 +83,8 @@ struct Pending {
     trigger: ItemUseTrigger,
     /// When the attempt started; its repeat interval counts from here.
     started: Duration,
+    /// The press only selects the item: it has no support face to place from.
+    select_only: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -205,7 +211,7 @@ fn advance_catalog(player: &mut client_state::PlayerRuntime, pending: &mut Pendi
 
 /// A planned double slab is built from the full block drawn the same way, such as dark oak
 /// planks for a dark oak double slab; every other offer is kept.
-fn full_block_offer(
+pub(super) fn full_block_offer(
     collisions: &PhysicsCollisionRegistries,
     stream: &chunk_pipeline::WorldStream,
     mut offer: mod_host::CreativePlacementOffer,
@@ -245,6 +251,65 @@ fn support(observed: &FrozenBlockObservation) -> ([i32; 3], u8, u32) {
         observed.target.face,
         observed.target.runtime_id,
     )
+}
+
+/// Stacks of the offered block's item Fast Place can use, from where it looks first: the
+/// hotbar, the rest of the inventory, then the Creative catalog. Each is the best match there,
+/// an exact block state first, and in the hotbar the selected slot on a tie.
+pub(super) struct Materials<'a> {
+    pub hotbar: Option<(u8, &'a NetworkItemStack)>,
+    pub carried: Option<(u8, &'a NetworkItemStack)>,
+    pub catalog: Option<(u32, &'a NetworkItemStack)>,
+}
+
+/// Finds [`Materials`] for `offer`. A wall sign, banner or coral fan is built from the item of
+/// its floor-standing form.
+pub(super) fn find_materials<'a>(
+    ledger: &'a inventory::inventory_ledger::PlayerInventoryLedger,
+    collisions: &PhysicsCollisionRegistries,
+    stream: &chunk_pipeline::WorldStream,
+    ui: &client_ui::ui_runtime::UiRuntime,
+    offer: &CreativePlacementOffer,
+    selected: u8,
+) -> Materials<'a> {
+    let mode = stream.network_id_mode();
+    let item_block = gameplay::placement_items::standing_form(collisions, mode, &offer.name)
+        .unwrap_or_else(|| offer.name.clone());
+    let quality = |stack: &NetworkItemStack| {
+        let block =
+            super::build::fast_place_block(collisions, stream, ui, stack.block_runtime_id, || {
+                stream.authority().item_identifier(stack.network_id)
+            })?;
+        (collisions.block_identifier(mode, block)? == item_block.as_str())
+            .then(|| collisions.block_canonical_state(mode, block) == Some(offer.states.as_str()))
+    };
+    let hotbar = (0..protocol::HOTBAR_SLOT_COUNT)
+        .filter_map(|slot| {
+            let stack = ledger.backing_stack(slot)?;
+            Some((quality(stack)?, slot, stack))
+        })
+        .max_by_key(|(exact, slot, _)| (*exact, *slot == selected))
+        .map(|(_, slot, stack)| (slot, stack));
+    let carried = (protocol::HOTBAR_SLOT_COUNT..PLAYER_INVENTORY_SLOT_COUNT as u8)
+        .filter_map(|slot| {
+            let stack = ledger.backing_stack(slot)?;
+            Some((quality(stack)?, slot, stack))
+        })
+        .max_by_key(|(exact, _, _)| *exact)
+        .map(|(_, slot, stack)| (slot, stack));
+    let catalog = ledger.creative_catalog().and_then(|catalog| {
+        catalog
+            .items
+            .iter()
+            .filter_map(|item| Some((quality(&item.stack)?, item.creative_network_id, &item.stack)))
+            .max_by_key(|(exact, _, _)| *exact)
+            .map(|(_, id, stack)| (id, stack))
+    });
+    Materials {
+        hotbar,
+        carried,
+        catalog,
+    }
 }
 
 /// Starts an assisted item selection, leaving ordinary placement available otherwise.
@@ -320,21 +385,6 @@ pub(super) fn try_start(
         return false;
     }
     let ledger = player.inventory.ledger();
-    // A wall sign, banner or coral fan is built from the item of its floor-standing form.
-    let item_block =
-        gameplay::placement_items::standing_form(&context.collisions, mode, &offer.name)
-            .unwrap_or_else(|| offer.name.clone());
-    let quality = |stack: &NetworkItemStack| {
-        let block = super::build::fast_place_block(
-            &context.collisions,
-            stream,
-            stack.block_runtime_id,
-            || stream.authority().item_identifier(stack.network_id),
-        )?;
-        (context.collisions.block_identifier(mode, block)? == item_block.as_str()).then(|| {
-            context.collisions.block_canonical_state(mode, block) == Some(offer.states.as_str())
-        })
-    };
     let selected = observed.selection.slot;
     policy.hold_active |= offer.repeat_while_held;
     if policy.recent.last() != Some(&offer.name) {
@@ -368,6 +418,7 @@ pub(super) fn try_start(
             bridge,
             trigger,
             started: context.time.elapsed(),
+            select_only: false,
         });
         return true;
     }
@@ -382,30 +433,36 @@ pub(super) fn try_start(
                 .collisions
                 .block_facts(mode, observed.target.runtime_id),
         );
-    if observed.target.face > 5
+    // Without the support face the press cannot place, but a click still puts the planned
+    // block's item in the hand so the player can place it themselves.
+    let select_only = observed.target.face > 5
         || (!use_air
             && !replacing_plant
-            && placement_cell(observed.target.position, observed.target.face) != offer.position)
-    {
+            && placement_cell(observed.target.position, observed.target.face) != offer.position);
+    if select_only {
         bevy::log::info!(
             ghost = ?offer.position,
             support = ?observed.target.position,
             face = observed.target.face,
             "Fast Place needs the support face adjoining the ghost"
         );
-        clear(Some(policy), player, movement);
-        return false;
+        if trigger != ItemUseTrigger::PlayerInput {
+            clear(Some(policy), player, movement);
+            return false;
+        }
     }
     if policy.pending.is_some() {
         return true;
     }
 
-    let hotbar = (0..protocol::HOTBAR_SLOT_COUNT)
-        .filter_map(|slot| {
-            let stack = ledger.backing_stack(slot)?;
-            Some((quality(stack)?, slot, key(stack)))
-        })
-        .max_by_key(|(exact, slot, _)| (*exact, *slot == selected));
+    let materials = find_materials(
+        ledger,
+        &context.collisions,
+        stream,
+        &context.ui,
+        &offer,
+        selected,
+    );
     let empty = (0..protocol::HOTBAR_SLOT_COUNT)
         .find(|slot| matches!(ledger.slot_state(*slot), Some(PlayerInventorySlot::Empty)));
     // Without an empty slot, replace the hotbar slot whose block was offered least recently
@@ -417,6 +474,7 @@ pub(super) fn try_start(
             let name = super::build::fast_place_block(
                 &context.collisions,
                 stream,
+                &context.ui,
                 stack.block_runtime_id,
                 || stream.authority().item_identifier(stack.network_id),
             )
@@ -429,29 +487,11 @@ pub(super) fn try_start(
         .min()
         .map(|(_, _, slot)| slot);
     let empty = empty.or(victim);
-    let carried = (protocol::HOTBAR_SLOT_COUNT..PLAYER_INVENTORY_SLOT_COUNT as u8)
-        .filter_map(|slot| {
-            let stack = ledger.backing_stack(slot)?;
-            Some((quality(stack)?, slot, key(stack)))
-        })
-        .max_by_key(|(exact, _, _)| *exact);
-    let catalog = ledger.creative_catalog().and_then(|catalog| {
-        catalog
-            .items
-            .iter()
-            .filter_map(|item| {
-                Some((
-                    quality(&item.stack)?,
-                    item.creative_network_id,
-                    key(&item.stack),
-                ))
-            })
-            .max_by_key(|(exact, _, _)| *exact)
-    });
     let mut replacement = None;
-    let (slot, key, request, catalog) = if let Some((_, slot, key)) = hotbar {
-        (slot, key, None, None)
-    } else if let Some((_, source, item)) = carried {
+    let (slot, key, request, catalog) = if let Some((slot, stack)) = materials.hotbar {
+        (slot, key(stack), None, None)
+    } else if let Some((source, stack)) = materials.carried {
+        let item = key(stack);
         let slot = empty.unwrap_or(selected);
         if !player
             .inventory_commands()
@@ -467,7 +507,7 @@ pub(super) fn try_start(
             bevy::log::info!(block = %offer.name, "Fast Place needs this block in the player's inventory");
             return false;
         }
-        let Some((_, id, item)) = catalog else {
+        let Some((id, item)) = materials.catalog.map(|(id, stack)| (id, key(stack))) else {
             bevy::log::info!(
                 block = %offer.name,
                 empty_slot = empty.is_some(),
@@ -516,6 +556,7 @@ pub(super) fn try_start(
         bridge,
         trigger,
         started: context.time.elapsed(),
+        select_only,
     });
     true
 }
@@ -650,6 +691,12 @@ pub(super) fn resume(
         return true;
     }
     if player.selected_hotbar_slot() != Some(pending.slot) {
+        movement.end_placement_facing();
+        return true;
+    }
+    if pending.select_only {
+        bevy::log::debug!(block = %pending.offer.name, slot = pending.slot,
+            "Fast Place selected the block for a placement it cannot make itself");
         movement.end_placement_facing();
         return true;
     }

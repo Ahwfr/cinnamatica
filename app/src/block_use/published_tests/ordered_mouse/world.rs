@@ -866,3 +866,121 @@ fn ordered_mouse_retry_validation_spectator_change_cancels_actor_use() {
     }
     assert!(!crate::ordered_interactions::pending(app.world()));
 }
+
+/// Offers `name` at `position` with the registry's default state and asks for a preview.
+fn preview_offer(world: &mut World, position: [i32; 3], name: &str) {
+    let states = world
+        .resource::<PhysicsCollisionRegistries>()
+        .block_canonical_state(assets::NetworkIdMode::Sequential, block_id(name))
+        .unwrap()
+        .to_owned();
+    world.init_resource::<crate::block_use::creative::CreativePlacement>();
+    let mut placement = world.resource_mut::<crate::block_use::creative::CreativePlacement>();
+    placement.offer = Some(mod_host::CreativePlacementOffer {
+        position,
+        name: name.into(),
+        states,
+        correct_aim: false,
+        strict_state: false,
+        repeat_while_held: true,
+    });
+    placement.preview_wanted = true;
+}
+
+fn preview(world: &World) -> mod_host::PlacementPrediction {
+    world
+        .resource::<crate::block_use::creative::CreativePlacement>()
+        .preview
+        .clone()
+        .expect("a preview for the offer")
+}
+
+/// The debug readout's dry run reports the support, item and block a press then really places,
+/// and sends, selects and places nothing itself.
+#[test]
+fn a_fast_place_preview_matches_the_press_and_sends_nothing() {
+    let (mut app, mut captured) = boundary_fixture();
+    let world = app.world_mut();
+    world
+        .resource_mut::<client_state::PlayerRuntime>()
+        .facts
+        .publish_player_game_mode(PlayerGameMode::Survival);
+    preview_offer(world, DESTINATION, "minecraft:glass");
+    super::before_physics(&mut app);
+    let missing = preview(app.world());
+    assert_eq!(
+        missing.verdict,
+        "no usable item in the hotbar, inventory or catalog"
+    );
+    assert_eq!(missing.item, None);
+
+    preview_offer(app.world_mut(), DESTINATION, "minecraft:stone");
+    super::before_physics(&mut app);
+    let stone = preview(app.world());
+    assert_eq!(stone.verdict, "places");
+    assert_eq!(stone.support, Some(CLICKED));
+    // The fixture's stack carries an arbitrary item id; the block it places is what counts.
+    assert_eq!(stone.source, "hotbar");
+    assert!(stone.item.is_some());
+    assert_eq!(stone.predicted_position, Some(DESTINATION));
+    assert_eq!(stone.predicted_block.as_deref(), Some("minecraft:stone"));
+    assert!(!stone.sneak && !stone.air_click);
+    assert!(super::super::super::transaction_targets(&mut captured).is_empty());
+    assert_eq!(
+        cell(app.world(), DESTINATION).unwrap(),
+        block_id("minecraft:air")
+    );
+
+    super::super::tap(app.world_mut(), MouseButton::Right);
+    for _ in 0..4 {
+        super::before_physics(&mut app);
+    }
+    assert_eq!(
+        super::super::super::transaction_targets(&mut captured),
+        vec![stone.support.unwrap()]
+    );
+    assert_eq!(
+        cell(app.world(), stone.predicted_position.unwrap()).unwrap(),
+        block_id("minecraft:stone")
+    );
+}
+
+/// A V2 click that has no support face for the ghost cannot place it, but still puts the
+/// planned block's item in the hand so the player can place it themselves.
+#[test]
+fn a_fast_place_click_without_support_selects_the_block_and_places_nothing() {
+    let (mut app, mut captured) = boundary_fixture();
+    let world = app.world_mut();
+    world
+        .resource_mut::<client_state::PlayerRuntime>()
+        .facts
+        .publish_player_game_mode(PlayerGameMode::Survival);
+    let ghost = [DESTINATION[0], DESTINATION[1] + 1, DESTINATION[2]];
+    preview_offer(world, ghost, "minecraft:stone");
+    {
+        let mut placement = world.resource_mut::<crate::block_use::creative::CreativePlacement>();
+        let offer = placement.offer.as_mut().unwrap();
+        offer.strict_state = true;
+        placement.preview_wanted = false;
+    }
+    let before = world
+        .resource::<client_state::PlayerRuntime>()
+        .selected_hotbar_slot();
+    assert_ne!(before, Some(1));
+    super::super::tap(world, MouseButton::Right);
+    for _ in 0..4 {
+        super::before_physics(&mut app);
+    }
+    assert!(super::super::super::transaction_targets(&mut captured).is_empty());
+    assert_eq!(
+        app.world()
+            .resource::<client_state::PlayerRuntime>()
+            .selected_hotbar_slot(),
+        Some(1)
+    );
+    assert_eq!(
+        cell(app.world(), DESTINATION).unwrap(),
+        block_id("minecraft:air")
+    );
+    assert_eq!(cell(app.world(), ghost).unwrap(), block_id("minecraft:air"));
+}

@@ -43,6 +43,7 @@ impl State {
             pending_packet_delay,
             packet_delay_writes: _,
             gameplay_facts: _,
+            placement_prediction,
             controls,
             world,
             camera_policy,
@@ -71,6 +72,7 @@ impl State {
         *camera_delta = None;
         *camera_policy = Default::default();
         *item_use_policy = Default::default();
+        *placement_prediction = None;
         inventory.revoke();
         *packet_delay_ms = 0;
         *pending_packet_delay = None;

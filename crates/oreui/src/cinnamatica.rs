@@ -56,17 +56,18 @@ enum Row {
     },
 }
 
+/// A [`Row::Cycle`].
+const fn cycle(id: &'static str, title: &'static str, caption: &'static str) -> Row {
+    Row::Cycle { id, title, caption }
+}
+
 /// The Settings tab's groups and rows; switch titles come from the panel's controls.
 const GROUPS: [(&str, &[Row]); 3] = [
     (
         "Fast Place",
         &[
             Row::Switch("fast-place"),
-            Row::Cycle {
-                id: "bw-fp-mode",
-                title: "Fast Place mode",
-                caption: "#bw_fp_mode",
-            },
+            cycle("bw-fp-mode", "Fast Place mode", "#bw_fp_mode"),
             Row::Switch("hold-place"),
             Row::Switch("placement-lock"),
             Row::Switch("correct-aim"),
@@ -77,12 +78,8 @@ const GROUPS: [(&str, &[Row]); 3] = [
         "Display",
         &[
             Row::Switch("look"),
-            Row::Switch("assist"),
-            Row::Cycle {
-                id: "lightness",
-                title: "Ghost lightness",
-                caption: "#bw_lightness",
-            },
+            cycle("target-info", "Target info", "#bw_target_info"),
+            cycle("lightness", "Ghost lightness", "#bw_lightness"),
         ],
     ),
     (

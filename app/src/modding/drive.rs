@@ -95,6 +95,7 @@ pub(super) fn drive_mod(
     if let Some(placement) = creative_placement.as_deref_mut() {
         placement.offer = None;
         placement.locked = false;
+        placement.preview_wanted = false;
     }
     let user_freelook = gameplay
         .input
@@ -364,6 +365,12 @@ pub(super) fn drive_mod(
             }
         }
     }
+    let prediction = creative_placement
+        .as_deref()
+        .and_then(|placement| placement.preview.clone());
+    for host in extension.hosts.iter_mut() {
+        host.set_placement_prediction(prediction.clone());
+    }
     multi::run_frame_callbacks(
         &mut extension.hosts,
         multi::FrameInput {
@@ -501,6 +508,13 @@ pub(super) fn drive_mod(
             .hosts
             .iter_mut()
             .find_map(|host| host.creative_placement_offer().cloned());
+    }
+    if let Some(placement) = creative_placement.as_deref_mut() {
+        placement.preview_wanted = enabled
+            && extension
+                .hosts
+                .iter_mut()
+                .any(|host| host.placement_prediction_wanted());
     }
     if let Some((index, error)) = filter_error {
         callback_failed = true;

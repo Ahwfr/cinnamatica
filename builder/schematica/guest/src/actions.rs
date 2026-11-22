@@ -52,9 +52,9 @@ impl Viewer {
                 self.dirty |= self.move_here();
                 return;
             }
-            "assist" => {
-                self.options.assist = !self.options.assist;
-                if !self.options.assist {
+            "target-info" => {
+                self.options.target_info = self.options.target_info.next();
+                if self.options.target_info == crate::TargetInfo::Off {
                     self.show_label("");
                 }
                 self.options.save();

@@ -10,25 +10,31 @@ impl Viewer {
 
     pub(super) fn publish_label(&mut self, placement_cell: Option<[i32; 3]>) {
         if self.paste.is_some() {
+            self.hide_debug();
             return;
         }
-        if let Some((message, _)) = &self.paste_notice {
-            self.show_label(&message.clone());
+        if let Some((message, _)) = self.paste_notice.clone() {
+            self.hide_debug();
+            self.show_label(&message);
             return;
         }
         if let Some(text) = self.tool_label() {
+            self.hide_debug();
             self.show_label(&text);
             return;
         }
-        if !self.options.assist {
+        if self.options.target_info == TargetInfo::Off {
+            self.hide_debug();
             self.show_label("");
             return;
         }
-        let target = placement_cell
-            .filter(|pos| self.tiles.iter().any(|tile| tile.is_missing(*pos)))
-            .and_then(|pos| self.planned_block(pos).map(|block| (block, pos, true)))
-            .or_else(|| self.aimed_block().map(|(block, pos)| (block, pos, false)));
-        if let Some((block, [x, y, z], fast)) = target {
+        if self.options.target_info == TargetInfo::Debug && self.placement.is_some() {
+            let cell = self.label_target(placement_cell).map(|(_, pos, _)| pos);
+            self.show_debug(cell);
+        } else {
+            self.hide_debug();
+        }
+        if let Some((block, [x, y, z], fast)) = self.label_target(placement_cell) {
             let name = block.name.strip_prefix("minecraft:").unwrap_or(&block.name);
             let name = name.replace('_', " ");
             let action = if fast && self.options.hold_place {
@@ -67,6 +73,20 @@ impl Viewer {
             self.options.menu_hint(&self.schematic.name)
         };
         self.show_label(&message);
+    }
+}
+
+impl Viewer {
+    /// The block Target info describes: Fast Place's missing cell, else the aimed planned block.
+    /// The flag is set for the Fast Place cell.
+    fn label_target(
+        &self,
+        placement_cell: Option<[i32; 3]>,
+    ) -> Option<(&schematica_core::BlockState, [i32; 3], bool)> {
+        placement_cell
+            .filter(|pos| self.tiles.iter().any(|tile| tile.is_missing(*pos)))
+            .and_then(|pos| self.planned_block(pos).map(|block| (block, pos, true)))
+            .or_else(|| self.aimed_block().map(|(block, pos)| (block, pos, false)))
     }
 }
 

@@ -56,11 +56,10 @@ impl Tab {
 }
 
 /// The Settings tab's switches: option key and title. Controls are named `bw-set-<key>`.
-const SETTINGS: [(&str, &str); 10] = [
+const SETTINGS: [(&str, &str); 9] = [
     ("hold-place", "Hold to place"),
     ("placement-lock", "Placement lock"),
     ("look", "Textured ghost blocks"),
-    ("assist", "Target info"),
     ("remember-placement", "Remember positions"),
     ("paste-destroy", "Replace wrong blocks"),
     ("fast-place", "Fast Place"),
@@ -160,8 +159,8 @@ mod layout {
             "Textured ghosts look like the real blocks. Off shows simple coloured markers.",
         ),
         (
-            "assist",
-            "Shows the targeted material and its coordinates on screen.",
+            "target-info",
+            "Regular shows the targeted material and its coordinates. Debug also shows its states and Fast Place's prediction.",
         ),
         (
             "lightness",
@@ -907,19 +906,20 @@ mod layout {
         }
 
         nodes.extend(group("display", "Display", [214., 128.], [234., 60.]));
-        for (line, key) in ["look", "assist"].into_iter().enumerate() {
-            rows.push(switch(controls, key, [242., 78. + 26. * line as f64]));
-        }
-        for (line, (id, title, binding)) in [("lightness", "Ghost lightness", "#bw_lightness")]
-            .into_iter()
-            .enumerate()
+        rows.push(switch(controls, "look", [242., 78.]));
+        for (line, (id, title, binding)) in [
+            ("target-info", "Target info", "#bw_target_info"),
+            ("lightness", "Ghost lightness", "#bw_lightness"),
+        ]
+        .into_iter()
+        .enumerate()
         {
             let (row, index) = cycle_row(
                 controls,
                 id,
                 title,
                 binding,
-                [242., 130. + 26. * line as f64],
+                [242., 104. + 26. * line as f64],
                 width,
             );
             rows.push((id.into(), row, index));
@@ -1244,7 +1244,6 @@ impl Viewer {
         let options = &self.options;
         match key {
             "look" => options.textured,
-            "assist" => options.assist,
             "remember-placement" => options.remember_placement,
             "paste-destroy" => options.paste_destroy,
             "fast-place" => options.fast_place,
@@ -1620,6 +1619,10 @@ fn settings(viewer: &Viewer, out: &mut Map<String, Value>, controls: &mut Vec<Va
         "#bw_lightness".into(),
         json!(format!("{}%", viewer.options.lightness)),
     );
+    out.insert(
+        "#bw_target_info".into(),
+        json!(viewer.options.target_info.title()),
+    );
     for (key, _) in SETTINGS {
         controls.push(json!({
             "id": format!("{SETTING_PREFIX}{key}"),
@@ -1871,8 +1874,17 @@ mod tests {
             bindings(&viewer, &mut out, &mut Vec::new());
             assert_eq!(out["#bw_lightness"], expected);
         }
+        assert_eq!(out["#bw_target_info"], "Off");
+        for expected in ["Regular", "Debug", "Off"] {
+            viewer.browser_event("target-info", 1.);
+            let mut out = Map::new();
+            bindings(&viewer, &mut out, &mut Vec::new());
+            assert_eq!(out["#bw_target_info"], expected);
+        }
         let ids = routed_ids();
         assert!(ids.iter().any(|routed| routed == "lightness"));
+        assert!(ids.iter().any(|routed| routed == "target-info"));
+        assert!(!ids.iter().any(|routed| routed == "bw-set-assist"));
         assert!(!ids.iter().any(|routed| routed == "opacity"));
         for removed in ["ui-layout", "hotkeys", "x-minus", "verifier"] {
             assert!(!ids.iter().any(|routed| routed == removed), "{removed}");

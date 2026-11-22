@@ -28,6 +28,16 @@ impl ModHost {
         self.is_active() && self.instance.placement_locked()
     }
 
+    /// Whether this mod read the placement prediction in its last committed frame.
+    pub fn placement_prediction_wanted(&self) -> bool {
+        self.is_active() && self.instance.placement_prediction_wanted()
+    }
+
+    /// Delivers the client's latest placement dry run for the next frame's reads.
+    pub fn set_placement_prediction(&mut self, prediction: Option<crate::PlacementPrediction>) {
+        self.instance.set_placement_prediction(prediction);
+    }
+
     pub fn creative_placement_offer(&self) -> Option<&crate::CreativePlacementOffer> {
         self.instance.creative_placement_offer()
     }

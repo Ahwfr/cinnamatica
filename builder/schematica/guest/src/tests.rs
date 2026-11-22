@@ -117,7 +117,7 @@ pub(super) fn reference_viewer() -> Viewer {
         ],
         Options {
             textured: true,
-            assist: false,
+            target_info: TargetInfo::Off,
             fast_place: true,
             correct_aim: false,
             strict_place: false,
@@ -167,7 +167,7 @@ fn menu_edits_turn_the_guide_and_select_layer_ranges() {
         vec!["Demo".into(), "Wagon".into()],
         Options {
             textured: true,
-            assist: false,
+            target_info: TargetInfo::Off,
             fast_place: false,
             correct_aim: false,
             strict_place: false,
@@ -371,16 +371,50 @@ fn ghost_lightness_loads_bounded_and_ignores_older_settings() {
 }
 
 #[test]
+fn target_info_loads_its_mode_and_older_on_off_settings() {
+    use serde_json::json;
+    assert_eq!(TargetInfo::saved(&json!({})), TargetInfo::Off);
+    assert_eq!(
+        TargetInfo::saved(&json!({ "assist": true })),
+        TargetInfo::Regular
+    );
+    assert_eq!(
+        TargetInfo::saved(&json!({ "assist": false })),
+        TargetInfo::Off
+    );
+    assert_eq!(
+        TargetInfo::saved(&json!({ "assist": true, "target_info": "debug" })),
+        TargetInfo::Debug
+    );
+    assert_eq!(
+        TargetInfo::saved(&json!({ "assist": true, "target_info": "bogus" })),
+        TargetInfo::Regular
+    );
+}
+
+#[test]
 fn liquids_have_no_item_and_a_powered_torch_is_offered_as_the_item_it_places() {
     use schematica_core::BlockState;
-    for name in ["minecraft:water", "minecraft:flowing_water", "minecraft:lava", "minecraft:flowing_lava"] {
+    for name in [
+        "minecraft:water",
+        "minecraft:flowing_water",
+        "minecraft:lava",
+        "minecraft:flowing_lava",
+    ] {
         assert!(unplaceable(name), "{name}");
     }
-    for name in ["minecraft:stone", "minecraft:waxed_copper_bulb", "minecraft:redstone_torch"] {
+    for name in [
+        "minecraft:stone",
+        "minecraft:waxed_copper_bulb",
+        "minecraft:redstone_torch",
+    ] {
         assert!(!unplaceable(name), "{name}");
     }
     // The unlit torch has no item; the redstone torch item places it and the world turns it off.
     let torch = unlit_variant(BlockState::new("minecraft:unlit_redstone_torch"));
     assert_eq!(torch.name, "minecraft:redstone_torch");
-    assert_eq!(unlit_variant(BlockState::new("minecraft:stone")).name, "minecraft:stone");
+    assert_eq!(
+        unlit_variant(BlockState::new("minecraft:stone")).name,
+        "minecraft:stone"
+    );
 }

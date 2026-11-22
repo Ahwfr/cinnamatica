@@ -64,6 +64,27 @@ pub(super) fn maintain_block_use(
     };
     let input_mode = protocol_input_mode(input.input_mode);
     let input_authority = (input.authority_generation, input.frame_sequence);
+    if context
+        .creative
+        .as_ref()
+        .is_some_and(|policy| policy.preview_wanted)
+    {
+        let preview = super::preview::preview(
+            &player_runtime,
+            &context,
+            &mut runtime,
+            &mut item_use,
+            &movement,
+            pick,
+            input_mode,
+            input_authority,
+        );
+        if let Some(policy) = context.creative.as_deref_mut() {
+            policy.preview = preview;
+        }
+    } else if let Some(policy) = context.creative.as_deref_mut() {
+        policy.preview = None;
+    }
     let has_ordered_input = input.ordered.is_some();
     let mut use_phase = context.input.phase(Action::Use);
     if has_ordered_input {
@@ -223,16 +244,9 @@ pub(super) fn maintain_block_use(
             }
             let strict = offer.strict_state;
             let assisted_hold = offer.repeat_while_held;
-            let native = observed.as_ref().filter(|hit| {
-                (!offer.correct_aim || !offer.name.ends_with("_door") || hit.target.face == 1)
-                    && (!offer.strict_state
-                        || super::orientation::support_produces_half(
-                            super::orientation::planned_placement_half(offer),
-                            hit.target.face,
-                            hit.target.relative_hit[1],
-                        ))
-                    && placement_cell(hit.target.position, hit.target.face) == offer.position
-            });
+            let native = observed
+                .as_ref()
+                .filter(|hit| super::target::on_planned_face(offer, hit));
             let bridge = native
                 .is_none()
                 .then(|| {

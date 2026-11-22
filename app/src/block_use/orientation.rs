@@ -147,9 +147,10 @@ pub(super) fn correction(
     if !caps.can_build {
         return None;
     }
-    let held = super::build::held_placement_block(
+    let held = super::build::fast_place_block(
         &context.collisions,
         stream,
+        &context.ui,
         observed.selection.item.block_runtime_id(),
         || {
             stream

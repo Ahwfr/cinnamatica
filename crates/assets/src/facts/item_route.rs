@@ -15,23 +15,30 @@ struct Route {
     block_name: String,
 }
 
+/// Every routed item and the block it places, read once from the pinned table.
+fn routes() -> &'static HashMap<String, String> {
+    static ROUTES: OnceLock<HashMap<String, String>> = OnceLock::new();
+    ROUTES.get_or_init(|| {
+        let table: Table = serde_json::from_str(SOURCE).expect("valid block item routes");
+        table
+            .routes
+            .into_iter()
+            .map(|route| (route.identifier, route.block_name))
+            .collect()
+    })
+}
+
 /// The block an item places when the route table names one other than the item itself, such
 /// as `minecraft:oak_sign` placing `minecraft:standing_sign`. Items whose route names their
 /// own identifier, and items without a route, answer `None`.
 pub fn item_block_route(identifier: &str) -> Option<&'static str> {
-    static ROUTES: OnceLock<HashMap<String, String>> = OnceLock::new();
-    ROUTES
-        .get_or_init(|| {
-            let table: Table = serde_json::from_str(SOURCE).expect("valid block item routes");
-            table
-                .routes
-                .into_iter()
-                .filter(|route| route.identifier != route.block_name)
-                .map(|route| (route.identifier, route.block_name))
-                .collect()
-        })
-        .get(identifier)
-        .map(String::as_str)
+    item_places_block(identifier).filter(|block| *block != identifier)
+}
+
+/// The block an item places according to the route table, including items such as
+/// `minecraft:hopper` that place the same-named block without carrying it in their stack.
+pub fn item_places_block(identifier: &str) -> Option<&'static str> {
+    routes().get(identifier).map(String::as_str)
 }
 
 #[cfg(test)]
@@ -53,5 +60,24 @@ mod tests {
             Some("minecraft:standing_banner")
         );
         assert_eq!(item_block_route("minecraft:stone"), None);
+    }
+
+    #[test]
+    fn same_named_routes_still_name_their_block() {
+        use super::item_places_block;
+        assert_eq!(item_block_route("minecraft:hopper"), None);
+        assert_eq!(
+            item_places_block("minecraft:hopper"),
+            Some("minecraft:hopper")
+        );
+        assert_eq!(
+            item_places_block("minecraft:campfire"),
+            Some("minecraft:campfire")
+        );
+        assert_eq!(
+            item_places_block("minecraft:wheat_seeds"),
+            Some("minecraft:wheat")
+        );
+        assert_eq!(item_places_block("minecraft:diamond"), None);
     }
 }
