@@ -11,18 +11,29 @@ use nucleation::{
 use schematica_core::{BlockState, Schematic, StateValue, blueprint};
 use std::{borrow::Cow, collections::HashMap, fs, io::Read, path::Path};
 
-const FILE_LIMIT: usize = 8 * 1024 * 1024;
+const FILE_LIMIT: usize = 64 * 1024 * 1024;
 
 /// Extensions with a dedicated decoder. Any other name is still accepted when its contents
 /// match a supported format.
-const KNOWN_EXTENSIONS: [&str; 6] = ["mcstructure", "nbt", "litematic", "schem", "schematic", "gz"];
+const KNOWN_EXTENSIONS: [&str; 6] = [
+    "mcstructure",
+    "nbt",
+    "litematic",
+    "schem",
+    "schematic",
+    "gz",
+];
 
 pub fn import(path: &Path) -> Result<Schematic> {
     let mut data = Vec::new();
     fs::File::open(path)?
         .take(FILE_LIMIT as u64 + 1)
         .read_to_end(&mut data)?;
-    ensure!(data.len() <= FILE_LIMIT, "input exceeds 8 MiB");
+    ensure!(
+        data.len() <= FILE_LIMIT,
+        "input exceeds {} MiB",
+        FILE_LIMIT / (1024 * 1024)
+    );
     let name = path.file_stem().unwrap_or_default().to_string_lossy();
     let name: String = name
         .chars()
@@ -100,7 +111,11 @@ fn gunzip(data: &[u8]) -> Result<Cow<'_, [u8]>> {
         .take(FILE_LIMIT as u64 + 1)
         .read_to_end(&mut plain)
         .context("decompress gzip input")?;
-    ensure!(plain.len() <= FILE_LIMIT, "decompressed input exceeds 8 MiB");
+    ensure!(
+        plain.len() <= FILE_LIMIT,
+        "decompressed input exceeds {} MiB",
+        FILE_LIMIT / (1024 * 1024)
+    );
     Ok(Cow::Owned(plain))
 }
 
@@ -606,12 +621,17 @@ mod tests {
         );
         root.insert(
             "blocks".into(),
-            NbtValue::List(vec![block([0, 0, 0], 1), block([1, 2, 3], 2), block([1, 0, 0], 0)]),
+            NbtValue::List(vec![
+                block([0, 0, 0], 1),
+                block([1, 2, 3], 2),
+                block([1, 0, 0], 0),
+            ]),
         );
         let mut plain = Vec::new();
         nucleation::nbt::io::write_nbt(&mut plain, &root, "", Endian::Big)?;
         let mut gzipped = Vec::new();
-        let mut encoder = flate2::write::GzEncoder::new(&mut gzipped, flate2::Compression::default());
+        let mut encoder =
+            flate2::write::GzEncoder::new(&mut gzipped, flate2::Compression::default());
         encoder.write_all(&plain)?;
         encoder.finish()?;
 
@@ -619,7 +639,11 @@ mod tests {
             let output = import_bytes(data, "java".into(), ext)?;
             assert_eq!(output.size(), [2, 3, 4], "{ext}");
             assert_eq!(output.block_count(), 2, "{ext}");
-            assert_eq!(output.get([0, 0, 0]).unwrap().name, "minecraft:stone", "{ext}");
+            assert_eq!(
+                output.get([0, 0, 0]).unwrap().name,
+                "minecraft:stone",
+                "{ext}"
+            );
             let stairs = output.get([1, 2, 3]).unwrap();
             assert_eq!(stairs.name, "minecraft:oak_stairs", "{ext}");
         }
@@ -747,7 +771,11 @@ mod tests {
         let mut encoder = flate2::write::DeflateEncoder::new(&mut raw, flate2::Compression::fast());
         encoder.write_all(&plain)?;
         encoder.finish()?;
-        for (label, payload) in [("gzip", gzip), ("raw deflate", raw), ("plain", plain.clone())] {
+        for (label, payload) in [
+            ("gzip", gzip),
+            ("raw deflate", raw),
+            ("plain", plain.clone()),
+        ] {
             let output = import_bytes(&encode(payload)?, "demo".into(), "mcstructure")?;
             assert_eq!(output.size(), [10, 6, 11], "{label}");
             assert_eq!(output.block_count(), 141, "{label}");
@@ -774,6 +802,20 @@ mod tests {
         let data = litematic::to_litematic(&source)?;
         let output = import_bytes(&data, "misnamed".into(), "dat")?;
         assert_eq!(output.get([0, 0, 0]).unwrap().name, "minecraft:stone");
+        Ok(())
+    }
+
+    #[test]
+    fn compressed_input_can_expand_beyond_the_old_eight_mib_limit() -> Result<()> {
+        use std::io::Write;
+        let plain = vec![b'x'; 9 * 1024 * 1024];
+        let mut compressed = Vec::new();
+        let mut encoder =
+            flate2::write::GzEncoder::new(&mut compressed, flate2::Compression::best());
+        encoder.write_all(&plain)?;
+        encoder.finish()?;
+        assert!(compressed.len() < 64 * 1024);
+        assert_eq!(gunzip(&compressed)?.as_ref(), plain.as_slice());
         Ok(())
     }
 }

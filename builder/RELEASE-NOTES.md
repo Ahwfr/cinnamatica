@@ -1,3 +1,9 @@
+# Cinnamatica 0.3.61
+
+- Remove the independent 32 KiB decoded-palette limit. Block-state descriptions and cell data now share the existing library-entry capacity, in both the importer and guest decoder. The fixed library slot and existing imported libraries stay compatible.
+- Raise the importer's input and gzip-decoded byte allowance from 8 MiB to 64 MiB. These are distinct from encoded palette size and schematic volume.
+- Keep bounded library/component storage, 1,024 palette states, 128-block dimensions and 400,000 bounding-box cells. This is not unlimited Litematica-size support; Litematica's practical memory limits are not equivalent to this client's fixed embedded library.
+
 # Cinnamatica 0.3.60
 
 Everything from 0.3.59, plus:

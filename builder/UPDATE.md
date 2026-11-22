@@ -1,5 +1,13 @@
 # Installing and updating Builder
 
+0.3.61 fixes imports whose decoded block-state palette exceeds 32 KiB, even when the
+compressed source file is smaller. It changes the importer and guest decoder, not
+the native client API. Both are updated together; old library payloads and the
+fixed embedded slot remain compatible. Input and gzip-decoded data may be up to
+64 MiB. The eight-entry library still shares about 1.78 MiB of encoded storage;
+dimensions, cell counts and distinct-state limits remain unchanged. Larger source
+files are not a promise that arbitrary-volume Litematica schematics will fit.
+
 0.3.60 changes only the mod. It is untested in the game.
 
 0.3.59 changes only the mod. It is untested in the game.
