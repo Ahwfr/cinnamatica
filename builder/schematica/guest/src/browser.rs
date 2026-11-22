@@ -584,8 +584,12 @@ mod layout {
                 text("Material", [200., 10.], [42., 82.], MUTED, "left"),
             ),
             named(
+                "head_have",
+                text("Have", [80., 10.], [200., 82.], MUTED, "right"),
+            ),
+            named(
                 "head_needed",
-                text("Needed", [80., 10.], [280., 82.], MUTED, "right"),
+                text("Left", [80., 10.], [280., 82.], MUTED, "right"),
             ),
             named(
                 "head_total",
@@ -614,7 +618,11 @@ mod layout {
                 named("icon", icon),
                 named(
                     "name",
-                    text(&field("name"), [220., 10.], [30., 7.], TEXT, "left"),
+                    text(&field("name"), [158., 10.], [30., 7.], TEXT, "left"),
+                ),
+                named(
+                    "have",
+                    text(&field("have"), [80., 10.], [188., 7.], TEXT, "right"),
                 ),
                 named("needed", needed(NEEDED, "need")),
                 named("done", needed(GREEN, "done")),
@@ -638,7 +646,7 @@ mod layout {
                     "#bw_empty_visible",
                 ),
             ),
-            footer("Needed counts update as terrain is compared"),
+            footer("Have is what you carry; Left is what still has to be placed, Done means all of it is in the world"),
         ]);
         nodes
     }
@@ -1043,11 +1051,11 @@ mod layout {
             plain(controls, "paste", "#bw_paste", [90., 20.], [20., 277.]),
         ));
         nodes.push(named(
-            "paste_mode",
+            "export",
             plain(
                 controls,
-                "bw-paste-mode",
-                "#bw_paste_mode",
+                "bw-export",
+                "#bw_export",
                 [95., 20.],
                 [118., 277.],
             ),
@@ -1119,9 +1127,32 @@ pub(super) struct MaterialPageCounts {
     palette_identity: (usize, usize),
     palette_cursor: usize,
     palette_indices: [Vec<usize>; ROWS],
-    needed: [u64; ROWS],
+    /// Blocks already in the world as planned, per row; what is left is the total less these.
+    built: [u64; ROWS],
     cursor: usize,
+    /// Finished counts by material, kept while the palette and the placed totals are unchanged,
+    /// so a page seen before (or one the search brings back) shows at once instead of
+    /// counting every tile again.
+    known: std::collections::BTreeMap<usize, u64>,
+    known_key: (usize, usize, u64),
 }
+
+/// Spare fuel in this callback. Native tests have no budget to read and are never limited.
+fn spare_fuel() -> u64 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        crate::budget::remaining_fuel()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        u64::MAX
+    }
+}
+
+/// Fuel the Materials page leaves for the rest of the frame, and the most it counts per call.
+const COUNT_RESERVE: u64 = 1_100_000;
+const PALETTE_PER_CALL: usize = 512;
+const TILES_PER_CALL: usize = 32;
 
 impl Viewer {
     pub(super) fn material_counts_pending(&self) -> bool {
@@ -1227,10 +1258,8 @@ impl Viewer {
             self.browser_tab = tab;
         } else if let Some(key) = id.strip_prefix(SETTING_PREFIX) {
             self.browser_setting(key, value >= 0.5);
-        } else if id == "bw-paste-mode" {
-            self.options.structure_paste = !self.options.structure_paste;
-            self.paste_confirm = false;
-            self.options.save();
+        } else if id == "bw-export" {
+            self.export_button();
         } else if id == MODE_ID {
             self.options.strict_place = !self.options.strict_place;
             self.options.save();
@@ -1281,17 +1310,38 @@ impl Viewer {
             return materials.map(|index| index.map(|index| self.materials[index].total));
         }
         let identity = self.preview.palette_identity();
+        let built_key = self.tiles.iter().map(|tile| tile.built).sum::<u64>();
+        let key = (identity.0, identity.1, built_key);
         let mut counts = self.browser_counts.borrow_mut();
+        if counts.known_key != key {
+            counts.known.clear();
+            counts.known_key = key;
+            counts.materials = [None; ROWS];
+            counts.palette_cursor = 0;
+            counts.palette_indices = Default::default();
+            counts.built = [0; ROWS];
+            counts.cursor = 0;
+        }
+        // Every row on this page was counted before: show it without walking the tiles.
+        if materials
+            .iter()
+            .all(|line| line.is_none_or(|index| counts.known.contains_key(&index)))
+        {
+            return materials.map(|line| line.and_then(|index| counts.known.get(&index).copied()));
+        }
         if counts.materials != materials || counts.palette_identity != identity {
+            let known = std::mem::take(&mut counts.known);
             *counts = MaterialPageCounts {
                 materials,
                 palette_identity: identity,
+                known,
+                known_key: key,
                 ..Default::default()
             };
         }
-        let start = counts.palette_cursor;
-        let end = (start + 64).min(identity.1);
         let names = materials.map(|line| line.map(|index| self.materials[index].name.as_str()));
+        let start = counts.palette_cursor;
+        let end = (start + PALETTE_PER_CALL).min(identity.1);
         for (offset, name) in self.preview.palette_names(start, end).enumerate() {
             for (row, expected) in names.iter().enumerate() {
                 if *expected == Some(name) {
@@ -1303,22 +1353,120 @@ impl Viewer {
         if end < identity.1 {
             return [None; ROWS];
         }
-        // Keep the UI open while a large schematic's visible rows are counted.
-        let end = (counts.cursor + 4).min(self.tiles.len());
-        for tile in &self.tiles[counts.cursor..end] {
+        // Count as many tiles as this frame can spare, so the window stays responsive while a
+        // large schematic's visible rows are counted.
+        let mut counted = 0;
+        while counts.cursor < self.tiles.len()
+            && counted < TILES_PER_CALL
+            && (counted == 0 || spare_fuel() >= COUNT_RESERVE)
+        {
+            let tile = &self.tiles[counts.cursor];
             for (row, material) in materials.iter().enumerate() {
                 if material.is_some() {
-                    counts.needed[row] +=
-                        u64::from(tile.material_counts(&counts.palette_indices[row])[0]);
+                    let add = u64::from(tile.material_counts(&counts.palette_indices[row])[1]);
+                    counts.built[row] += add;
                 }
             }
+            counts.cursor += 1;
+            counted += 1;
         }
-        counts.cursor = end;
-        if end == self.tiles.len() {
-            std::array::from_fn(|row| materials[row].map(|_| counts.needed[row]))
+        if counts.cursor == self.tiles.len() {
+            // What is left is everything not yet in the world as planned. Counting only the
+            // cells known to be missing showed 0 for blocks in unloaded or unchecked parts
+            // of the guide.
+            let left: [Option<u64>; ROWS] = std::array::from_fn(|row| {
+                materials[row].map(|index| self.materials[index].total.saturating_sub(counts.built[row]))
+            });
+            for (row, line) in materials.iter().enumerate() {
+                if let (Some(index), Some(value)) = (line, left[row]) {
+                    counts.known.insert(*index, value);
+                }
+            }
+            left
         } else {
             [None; ROWS]
         }
+    }
+}
+
+/// How many frames pass between reads of the player's inventory for the Have column.
+const INVENTORY_EVERY: u32 = 20;
+
+/// What the player carries, by item identifier, read every few frames while the list is open.
+#[derive(Default)]
+pub struct InventoryCache {
+    calls: u32,
+    counts: std::collections::HashMap<String, u32>,
+}
+
+impl InventoryCache {
+    /// Fills the cache without the host, and keeps it from being read again.
+    #[cfg(test)]
+    pub(crate) fn set_for_test(&mut self, counts: &[(&str, u32)]) {
+        self.counts = counts.iter().map(|(name, count)| ((*name).to_owned(), *count)).collect();
+        self.calls = 1;
+    }
+}
+
+/// The item that holds a block: the same name, except for the few blocks whose item is called
+/// something else (lit and powered variants, crops, signs).
+pub(crate) fn item_for_block(block: &str) -> String {
+    let name = block.strip_prefix("minecraft:").unwrap_or(block);
+    let item = match name {
+        "reeds" => "sugar_cane",
+        "redstone_wire" => "redstone",
+        "unpowered_repeater" | "powered_repeater" => "repeater",
+        "unpowered_comparator" | "powered_comparator" => "comparator",
+        "lit_furnace" => "furnace",
+        "lit_blast_furnace" => "blast_furnace",
+        "lit_smoker" => "smoker",
+        "lit_redstone_lamp" => "redstone_lamp",
+        "lit_redstone_ore" => "redstone_ore",
+        "unlit_redstone_torch" => "redstone_torch",
+        "standing_sign" | "wall_sign" => "oak_sign",
+        other => {
+            let sign = other
+                .strip_suffix("_standing_sign")
+                .or_else(|| other.strip_suffix("_wall_sign"));
+            return match sign {
+                Some(wood) => format!("minecraft:{wood}_sign"),
+                None => format!("minecraft:{other}"),
+            };
+        }
+    };
+    format!("minecraft:{item}")
+}
+
+#[cfg(target_arch = "wasm32")]
+fn read_inventory() -> Option<std::collections::HashMap<String, u32>> {
+    let equipment = crate::player_state::read_equipment().ok().flatten()?;
+    let mut counts = std::collections::HashMap::new();
+    for slot in equipment.inventory.iter().chain(std::iter::once(&equipment.offhand)) {
+        if let Some(item) = &slot.item
+            && let Some(identifier) = &item.identifier
+        {
+            *counts.entry(identifier.clone()).or_default() += u32::from(item.count);
+        }
+    }
+    Some(counts)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn read_inventory() -> Option<std::collections::HashMap<String, u32>> {
+    None
+}
+
+impl Viewer {
+    /// How many of `block`'s item the player carries, refreshed every few frames.
+    fn carried(&self, block: &str) -> u32 {
+        let mut cache = self.inventory.borrow_mut();
+        if cache.calls % INVENTORY_EVERY == 0
+            && let Some(counts) = read_inventory()
+        {
+            cache.counts = counts;
+        }
+        cache.calls = cache.calls.wrapping_add(1);
+        cache.counts.get(&item_for_block(block)).copied().unwrap_or(0)
     }
 }
 
@@ -1361,13 +1509,10 @@ fn materials(viewer: &Viewer, out: &mut Map<String, Value>) {
     let scanned = viewer.material_scan_available();
     let total: u64 = viewer.materials.iter().map(|line| line.total).sum();
     // Per-material counts walk every tile, so only the rows in view compute them; the
-    // totals read the tiles' running tallies.
+    // totals read each tile's built count. What is left is the total less what is built, so
+    // blocks in unloaded or unchecked parts of the guide count as left, not as done.
     let needed: u64 = if scanned {
-        viewer
-            .tiles
-            .iter()
-            .map(|tile| tile.tally.missing + tile.tally.wrong)
-            .sum()
+        total.saturating_sub(viewer.tiles.iter().map(|tile| tile.built).sum())
     } else {
         total
     };
@@ -1394,6 +1539,8 @@ fn materials(viewer: &Viewer, out: &mut Map<String, Value>) {
             "{}% built  ·  {placed} / {total}",
             (progress * 100.).floor()
         )
+    } else if viewer.placement.is_some() && viewer.shown {
+        "Checking the guide…".into()
     } else {
         "Place it to track progress".into()
     };
@@ -1449,7 +1596,7 @@ fn materials(viewer: &Viewer, out: &mut Map<String, Value>) {
             format!("#bw_row{row}_needed"),
             json!(needed.map_or_else(
                 || if line.is_some() { "…" } else { "" }.into(),
-                |needed| needed.to_string()
+                |needed| if needed == 0 { "Done".into() } else { needed.to_string() }
             )),
         );
         out.insert(
@@ -1457,6 +1604,10 @@ fn materials(viewer: &Viewer, out: &mut Map<String, Value>) {
             json!(needed.is_some_and(|n| n > 0)),
         );
         out.insert(format!("#bw_row{row}_done"), json!(needed == Some(0)));
+        out.insert(
+            format!("#bw_row{row}_have"),
+            json!(line.map_or(String::new(), |line| viewer.carried(&line.name).to_string())),
+        );
         out.insert(
             format!("#bw_row{row}_total"),
             json!(line.map_or(String::new(), |line| line.total.to_string())),
@@ -1573,18 +1724,20 @@ fn keys(viewer: &Viewer, out: &mut Map<String, Value>) {
         "#bw_paste".into(),
         json!(if viewer.paste.is_some() {
             "Cancel Paste"
-        } else if viewer.paste_confirm {
+        } else if viewer.paste_confirm && !viewer.export_confirming {
             "Confirm paste"
         } else {
             "Paste"
         }),
     );
     out.insert(
-        "#bw_paste_mode".into(),
-        json!(if viewer.options.structure_paste {
-            "Structure"
+        "#bw_export".into(),
+        json!(if viewer.export_run.is_some() {
+            "Cancel Export"
+        } else if viewer.paste_confirm && viewer.export_confirming {
+            "Confirm export"
         } else {
-            "Setblock"
+            "Export"
         }),
     );
     let overlaps = if viewer.options.paste_destroy {
@@ -1596,6 +1749,10 @@ fn keys(viewer: &Viewer, out: &mut Map<String, Value>) {
         "#bw_paste_hint".into(),
         json!(if viewer.paste.is_some() {
             "Stops the remaining paste".to_string()
+        } else if let Some(run) = &viewer.export_run {
+            format!("Exporting in the background  ·  {}", run.progress)
+        } else if viewer.paste_confirm && viewer.export_confirming {
+            "Click Export again to save a structure block structure".to_string()
         } else if viewer.paste_confirm {
             format!("Click again to confirm  ·  Replace wrong blocks: {overlaps}")
         } else {

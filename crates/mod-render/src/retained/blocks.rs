@@ -14,8 +14,73 @@ use std::{
 #[cfg(test)]
 mod tests;
 
-/// The plain full cube a hologram draws in place of a block-entity-rendered block.
+/// The plain full cube a hologram draws in place of a block-entity-rendered block when no
+/// closer match is known.
 const ENTITY_DRAWN_STAND_IN: &str = "minecraft:white_concrete";
+
+/// The ordinary full block whose look is closest to a block-entity-rendered `name`, so a chest
+/// is a brown cube and a shulker box has its own color instead of everything being white.
+/// The cube is only a stand-in: the model itself is drawn by the block-entity renderer, which
+/// a hologram does not have.
+fn entity_drawn_stand_in(name: &str) -> String {
+    let short = name.strip_prefix("minecraft:").unwrap_or(name);
+    let short = short.strip_prefix("waxed_").unwrap_or(short);
+    let copper = |family: &str| match family {
+        "exposed" => "exposed_copper",
+        "weathered" => "weathered_copper",
+        "oxidized" => "oxidized_copper",
+        _ => "copper_block",
+    };
+    let stand_in = if let Some(color) = short.strip_suffix("_shulker_box") {
+        match color {
+            "undyed" => "purple_concrete".to_owned(),
+            color => format!("{color}_concrete"),
+        }
+    } else if let Some(family) = short
+        .strip_suffix("copper_chest")
+        .or_else(|| short.strip_suffix("copper_golem_statue"))
+    {
+        copper(family.trim_end_matches('_')).to_owned()
+    } else {
+        match short {
+            "chest" | "trapped_chest" => "spruce_planks",
+            "ender_chest" => "obsidian",
+            "decorated_pot" => "terracotta",
+            "conduit" => "prismarine",
+            "frame" | "glow_frame" | "chalkboard" => "oak_planks",
+            "bed" | "standing_banner" | "wall_banner" => "white_wool",
+            "skeleton_skull" => "bone_block",
+            "wither_skeleton_skull" => "coal_block",
+            "zombie_head" => "green_concrete",
+            "creeper_head" => "lime_concrete",
+            "piglin_head" => "pink_concrete",
+            "player_head" => "terracotta",
+            "dragon_head" | "end_portal" | "end_gateway" => "black_concrete",
+            _ => return ENTITY_DRAWN_STAND_IN.to_owned(),
+        }
+        .to_owned()
+    };
+    format!("minecraft:{stand_in}")
+}
+
+/// Whether the client draws `name` as a real block-entity model over a hologram (chests and
+/// shulker boxes), so the terrain mesh leaves a hole instead of a stand-in cube.
+pub fn entity_overlaid(name: &str) -> bool {
+    let short = name.strip_prefix("minecraft:").unwrap_or(name);
+    let short = short.strip_prefix("waxed_").unwrap_or(short);
+    matches!(short, "chest" | "trapped_chest" | "ender_chest")
+        || short.ends_with("copper_chest")
+        || short.ends_with("shulker_box")
+}
+
+/// Whether a block of this palette reads the shelter of its whole vertical section column.
+/// Only seasonal leaves do; a state that is a bare runtime ID is not known, so it counts.
+fn reads_column_shelter(palette: &[BlockState]) -> bool {
+    palette.iter().any(|state| match state {
+        BlockState::RuntimeId(_) => true,
+        BlockState::Named { name, .. } => name.contains("leaves"),
+    })
+}
 
 /// Whether the block-entity renderer, not the terrain mesher, draws `name`.
 fn entity_drawn(name: &str) -> bool {
@@ -122,6 +187,8 @@ pub struct BlockGeometry {
     palette: OnceLock<Arc<MeshPalette>>,
     previous: Option<Arc<BlockMesh>>,
     dirty: Option<BTreeSet<[i32; 3]>>,
+    /// When the mod's edit reached the host, for timing the path to the screen.
+    created: std::time::Instant,
 }
 
 impl PartialEq for BlockGeometry {
@@ -145,6 +212,12 @@ impl BlockGeometry {
             settings,
         });
         Arc::ptr_eq(&context.assets, assets) && context.mode == mode && context.settings == settings
+    }
+
+    /// Milliseconds since this generation reached the host.
+    #[must_use]
+    pub fn age_ms(&self) -> f64 {
+        self.created.elapsed().as_secs_f64() * 1000.0
     }
 
     /// Publishes complete native GPU arena admission for this generation.
@@ -305,6 +378,7 @@ impl BlockGrid {
                 palette: OnceLock::new(),
                 previous: None,
                 dirty: None,
+                created: std::time::Instant::now(),
             })),
             vertices: Arc::from([]),
             indices: Arc::from([]),
@@ -347,8 +421,10 @@ impl BlockGrid {
             .map(|state| {
                 let id = match state {
                     BlockState::RuntimeId(id) => Some(*id),
+                    BlockState::Named { name, .. } if entity_overlaid(name) => Some(air),
                     BlockState::Named { name, .. } if entity_drawn(name) => {
-                        named(ENTITY_DRAWN_STAND_IN, "{}")
+                        named(&entity_drawn_stand_in(name), "{}")
+                            .or_else(|| named(ENTITY_DRAWN_STAND_IN, "{}"))
                     }
                     BlockState::Named { name, states } => named(name, states),
                 };
@@ -580,19 +656,29 @@ impl super::Store {
             .checked_add(1)
             .ok_or(error(ErrorCode::BudgetExceeded, "block generations"))?;
         let mut dirty = BTreeSet::new();
+        let side = world::SUB_CHUNK_SIDE as i32;
+        let sections = grid.size[1].div_ceil(world::SUB_CHUNK_SIDE as u32) as i32;
+        let whole_columns = reads_column_shelter(&grid.palette);
         for (index, edit) in changes {
             grid.cells[index] = edit.cell;
-            // Neighbour samples cover culling, liquids and AO. Seasonal foliage also
-            // reads shelter throughout the same vertical section column.
+            // Neighbour samples cover culling, liquids and AO. Seasonal leaves also read
+            // shelter throughout the same vertical section column, so a grid that has leaves
+            // remeshes whole columns; any other grid only the sections the edit can reach.
             let p = edit.position.map(|v| v as i32);
             for dx in -1..=1 {
                 for dz in -1..=1 {
-                    for sy in 0..grid.size[1].div_ceil(world::SUB_CHUNK_SIDE as u32) as i32 {
-                        dirty.insert([
-                            (p[0] + dx).div_euclid(world::SUB_CHUNK_SIDE as i32),
-                            sy,
-                            (p[2] + dz).div_euclid(world::SUB_CHUNK_SIDE as i32),
-                        ]);
+                    let column = [(p[0] + dx).div_euclid(side), (p[2] + dz).div_euclid(side)];
+                    if whole_columns {
+                        for sy in 0..sections {
+                            dirty.insert([column[0], sy, column[1]]);
+                        }
+                    } else {
+                        for dy in -1..=1 {
+                            let sy = (p[1] + dy).div_euclid(side);
+                            if (0..sections).contains(&sy) {
+                                dirty.insert([column[0], sy, column[1]]);
+                            }
+                        }
                     }
                 }
             }

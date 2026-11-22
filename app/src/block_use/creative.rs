@@ -526,7 +526,12 @@ pub(super) fn try_start(
             .inventory_commands()
             .request_background_personal_open(stream.local_player_runtime_id())
         {
-            bevy::log::info!(block = %offer.name, slot, "Fast Place could not open Creative inventory");
+            let blocker = player
+                .inventory
+                .ledger()
+                .background_personal_open_blocker(stream.local_player_runtime_id());
+            bevy::log::info!(block = %offer.name, slot, blocker,
+                "Fast Place could not open Creative inventory");
             return false;
         }
         (slot, item, None, Some(Catalog::Opening(id)))
@@ -827,6 +832,14 @@ pub(super) fn resume(
         return true;
     }
     let started = pending.started;
+    // How long this placement took from the click to the packet, so a slow hold can be read
+    // from the log: a swap that waited on the server, or the facing tick, shows up here.
+    let waited = context.time.elapsed().saturating_sub(started);
+    if waited >= Duration::from_millis(250) {
+        bevy::log::info!(block = %pending.offer.name, waited_ms = waited.as_millis() as u64,
+            swapped = pending.request.is_some(), turned = pending.aim.is_some(),
+            bridge = pending.bridge, "Fast Place: slow placement");
+    }
     runtime.forget_press_resolution();
     runtime.selection_changed(&observed.selection);
     let clock = RepeatClock::for_state(context.time.elapsed(), &state, Some(pending.game_mode));

@@ -140,6 +140,11 @@ pub(super) fn prepare(
             {
                 if let Some(request) = native.geometry.blocks() {
                     request.complete_render();
+                    bevy::log::info!(
+                        revision = request.grid.revision,
+                        since_received_ms = request.age_ms(),
+                        "Hologram generation shown"
+                    );
                 }
                 if let Some(old) = blocks.native.insert(id, Arc::new(native)) {
                     retired.push(old);
@@ -210,7 +215,9 @@ pub(super) fn prepare(
                     })
                 });
             let task = AsyncComputeTaskPool::get().spawn(async move {
+                let started = std::time::Instant::now();
                 let instances = instances(&mesh);
+                let sections = instances.len();
                 let terrain = PreparedResourceGeometry::build(
                     &instances,
                     assets.clone(),
@@ -218,7 +225,9 @@ pub(super) fn prepare(
                     queue.clone(),
                     None,
                 )?;
+                let built = started.elapsed();
                 let faces = sorting::faces(&instances, &terrain, assets.assets())?;
+                let faced = started.elapsed();
                 // Publish a drawable transparent stream with the arena, then
                 // refine its ordering per view as the camera moves.
                 let initial_order = if faces.is_empty() {
@@ -235,6 +244,13 @@ pub(super) fn prepare(
                         &faces, camera, direction, device, queue, &ledger,
                     )?))
                 };
+                bevy::log::info!(
+                    sections,
+                    arena_ms = built.as_secs_f64() * 1000.0,
+                    faces_ms = (faced - built).as_secs_f64() * 1000.0,
+                    sort_ms = (started.elapsed() - faced).as_secs_f64() * 1000.0,
+                    "Hologram GPU arena built"
+                );
                 Some(Native {
                     geometry,
                     terrain,

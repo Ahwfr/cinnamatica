@@ -326,14 +326,16 @@ fn prepare(
                 && local_use != LocalUse::Interact
                 && observed.selection.item.count() > 0
                 && placed_block.is_some_and(|block| {
-                    // A block without a placement rule, or one placed as it is (an azalea)
-                    // whose support the predictor does not model: neither can come out in
-                    // another state, so the server decides.
-                    matches!(
-                        context.collisions.block_facts(mode, block).placement,
+                    // A block whose survival rule is unresolved (mangrove roots, mushrooms and
+                    // the like) has a known placement but no support rule to predict it with,
+                    // so prediction refuses it. The server decides these as well, and blocks
+                    // placed as they are (an azalea), which cannot come out in another state.
+                    let fact = context.collisions.block_facts(mode, block);
+                    (matches!(
+                        fact.placement,
                         assets::facts::PlacementRule::Unresolved
                             | assets::facts::PlacementRule::Identity
-                    )
+                    ) || fact.survival == assets::registry::SurvivalRule::Unresolved)
                         && context.collisions.block_identifier(mode, block).is_some_and(|name| {
                             unpredicted_face_places(&context.collisions, mode, name, expected,
                                 observed.target.face)

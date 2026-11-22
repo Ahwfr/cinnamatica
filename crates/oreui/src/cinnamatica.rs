@@ -465,9 +465,17 @@ impl Window<'_> {
             CAPTION,
             TEXT_DIMMEST,
         )?;
+        let have_right = needed_right - canvas.r(11.2);
         self.right_text(
             canvas,
-            "Needed",
+            "Have",
+            [have_right, head],
+            CAPTION,
+            TEXT_DIMMEST,
+        )?;
+        self.right_text(
+            canvas,
+            "Left",
             [needed_right, head],
             CAPTION,
             TEXT_DIMMEST,
@@ -505,9 +513,16 @@ impl Window<'_> {
             canvas.text_line(
                 self.text(&field("name")),
                 [left + canvas.r(3.2), line],
-                needed_right - left - canvas.r(12.0),
+                have_right - left - canvas.r(12.0),
                 BODY,
                 TEXT,
+            )?;
+            self.right_text(
+                canvas,
+                self.text(&field("have")),
+                [have_right, line],
+                BODY,
+                TEXT_DIMMER,
             )?;
             let needed = if self.flag(&field("done")) {
                 SUCCESS_TINT
@@ -856,8 +871,8 @@ impl Window<'_> {
         let mode_right = mode_left + canvas.r(14.0);
         self.button(
             canvas,
-            "bw-paste-mode",
-            self.text("#bw_paste_mode"),
+            "bw-export",
+            self.text("#bw_export"),
             [mode_left, paste_top, mode_right, paste[3]],
             neutral,
             hits,

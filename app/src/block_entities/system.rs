@@ -41,6 +41,9 @@ const BLOCK_ENTITY_ASSETS_FILENAME: &str = assets::carriers::BLOCK_ENTITY.output
 /// Block entities farther than this from the eye are not drawn.
 pub(super) const SCAN_RADIUS_BLOCKS: f32 = 64.0;
 const MAX_SUBMISSIONS: usize = 4_096;
+/// Light blue and a little dimmer, the look of the hologram's own blocks.
+const GHOST_TINT: [f32; 3] = [0.62, 0.8, 1.0];
+const GHOST_BRIGHTNESS: f32 = 0.85;
 const TICKS_PER_SECOND: f64 = 20.0;
 const TEXT_CACHE_ENTRIES: usize = 256;
 const TEXT_CACHE_BYTES: usize = 2 * 1024 * 1024;
@@ -56,6 +59,7 @@ pub(super) mod columns;
 mod crystal_beams;
 mod culling;
 mod dragon_death;
+mod hologram;
 mod loyalty_ropes;
 mod maps;
 mod placement;
@@ -147,6 +151,9 @@ pub(crate) struct BlockEntityRuntime {
     books: books::TableBooks,
     /// This frame's submissions, kept empty between frames so their buffer is reused.
     submissions: Vec<BlockEntitySubmission>,
+    /// Chests and shulker boxes found in mods' retained block grids (the Schematica hologram).
+    hologram: hologram::HologramPieces,
+    hologram_pieces: Vec<([i32; 3], hologram::Piece)>,
 }
 
 impl BlockEntityRuntime {
@@ -168,6 +175,8 @@ impl BlockEntityRuntime {
             beam_source: None,
             books: books::TableBooks::default(),
             submissions: Vec::new(),
+            hologram: hologram::HologramPieces::default(),
+            hologram_pieces: Vec::new(),
         }
     }
 
@@ -375,6 +384,7 @@ pub(crate) fn update_block_entity_scene(
     mut placements: ResMut<render_scene::StaticItemPlacementsResource>,
     profiler: Option<Res<render_scene::RuntimeStageProfiler>>,
     cave: Option<Res<CaveVisibilityCache>>,
+    mod_scene: Option<Res<render_scene::ModRenderScene>>,
 ) {
     let camera = camera.single().ok();
     if !scene.has_assets() {
@@ -739,6 +749,53 @@ pub(crate) fn update_block_entity_scene(
     let global = (submissions.len() - before_global) as u32;
     work.candidates += global;
     work.prepared += global;
+    // Real chest and shulker models for a hologram's block grids, which the terrain mesh leaves
+    // out. They are drawn like placed blocks, so a ghost looks the same as the built result.
+    let mut pieces = std::mem::take(&mut runtime.hologram_pieces);
+    pieces.clear();
+    if let Some(mod_scene) = mod_scene.as_deref() {
+        let world = sim::PaletteWorld::new(
+            store,
+            collisions.registry(mode),
+            dimension,
+            Default::default(),
+        );
+        // Air and liquids leave the ghost in place; any other block supersedes it.
+        let occupied = |at: [i32; 3]| {
+            world.primary_runtime_id(at).is_ok_and(|id| {
+                collisions
+                    .block_identifier(mode, id)
+                    .is_some_and(|name| !hologram::is_open_cell(name))
+            })
+        };
+        runtime
+            .hologram
+            .gather(&mod_scene.retained, dimension, eye, occupied, &mut pieces);
+    }
+    for &(at, piece) in &pieces {
+        if submissions.len() >= MAX_SUBMISSIONS {
+            break;
+        }
+        let kind = match piece {
+            hologram::Piece::Chest(model) => BlockEntityKind::Chest(model),
+            hologram::Piece::Shulker(model) => BlockEntityKind::Shulker(model),
+        };
+        let (block_light, sky_light) = stream.light_level_at([at[0] as f32 + 0.5, at[1] as f32 + 0.5, at[2] as f32 + 0.5]);
+        // A ghost is washed light blue like the blocks of the hologram around it.
+        let light = match model_light(&kind, block_light, sky_light, daylight) {
+            BlockEntityLight::Scalar(value) => BlockEntityLight::Tinted {
+                value: value * GHOST_BRIGHTNESS,
+                tint: GHOST_TINT,
+            },
+            other => other,
+        };
+        submissions.push(BlockEntitySubmission {
+            block: at,
+            light,
+            kind,
+        });
+    }
+    runtime.hologram_pieces = pieces;
     placements.0.0 = held;
     let _zone = bevy::log::info_span!(
         "block_entity.scene_update",

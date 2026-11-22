@@ -1,5 +1,45 @@
 # Installing and updating Builder
 
+0.3.60 changes only the mod. It is untested in the game.
+
+0.3.59 changes only the mod. It is untested in the game.
+
+0.3.57 changes only the mod. It is untested in the game.
+
+0.3.55 changes only the mod. It is untested in the game.
+
+0.3.54 changes only the mod. It is untested in the game.
+
+0.3.53 changes the mod and the game, so it needs a full rebuild. It is untested in the game.
+
+0.3.52 changes the mod and the game, so it needs a full rebuild. It is untested in the game.
+
+0.3.51 changes the mod, so it needs a full rebuild. It is untested in the game.
+
+0.3.50 changes the mod and the game, so it needs a full rebuild. It is untested in the game.
+
+0.3.49 changes the game, so it needs a full rebuild. It is untested in the game.
+
+0.3.48 changes the mod and the game, so it needs a full rebuild. It is untested in the game.
+
+0.3.47 changes the mod, the Structure Host addon and the game, so it needs a full rebuild. It is untested in the game.
+
+0.3.46 changes the game, so it needs a full rebuild. It is untested in the game.
+
+0.3.45 changes the game as well as the mod, so it needs a full rebuild. It is untested in the game.
+
+0.3.44 changes only the mod (a crash fix in the paste check). It is untested in the game.
+
+0.3.43 changes only the mod (budget use of the ghost updates, and the paste check), so no new client features, but the build still runs in full. It is untested in the game.
+
+0.3.42 changes only the client's drawing of the hologram, so it needs the full build. It is untested in the game. It also carries 0.3.41, which was never released.
+
+0.3.41 changes the mod (guide, paste) and the hologram's stand-in blocks in the client, so it needs the full build. It is untested in the game.
+
+0.3.40 changes only the mod (the guide), so the client build is unchanged in behaviour. It is untested in the game.
+
+0.3.39 brings in ThSsilentKnight's Fast Place fixes (item lookup from game data, hoppers, ceiling levers, auto-sneak against interactive blocks, block-entity placeholders). It changes the game client and the mod, so it needs the full build. It is untested in the game.
+
 0.3.36 changes how Fast Place (V2 Strict) places blocks, so it needs the full client build: lamps, rails,
 scaffolding and other blocks with no placement rule can now be placed by clicking into air, and droppers,
 dispensers, observers and pistons follow the server's eye-height rule instead of a body box. The mod skips

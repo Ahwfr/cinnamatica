@@ -8,7 +8,23 @@ const EDGE: i32 = 8;
 const FRAGMENT: usize = 399;
 const PREFIX: &str = "/scriptevent cinnamatica:structure";
 
+/// Where a section stream goes: into the world, or into a named structure the host saves.
+#[derive(Clone)]
+pub(super) enum Target {
+    World,
+    /// A saved structure named `name`, whose cells are numbered from the box's minimum corner.
+    Saved { name: String },
+}
+
 pub(super) struct StructurePaste {
+    target: Target,
+    /// Whether this stream opens the host's session and whether it closes it. A grid paste
+    /// shares one session between its copies.
+    open: bool,
+    close: bool,
+    /// Commands one call may send. The host ends the mod for good when a frame asks for more
+    /// than four, so an export that runs beside other senders takes fewer.
+    commands: usize,
     min: [i32; 3],
     max: [i32; 3],
     next: [i32; 3],
@@ -16,6 +32,9 @@ pub(super) struct StructurePaste {
     tile: Tile,
     sent: usize,
     started: bool,
+    /// The section whose last fragment was sent since the previous call: world minimum and
+    /// exclusive maximum.
+    sent_box: Option<([i32; 3], [i32; 3])>,
 }
 
 #[derive(Default)]
@@ -32,7 +51,22 @@ struct Tile {
 impl StructurePaste {
     pub(super) fn new(schematic: &Schematic, placement: Placement, replace: bool) -> Self {
         let (min, max) = placement.world_bounds(schematic.size());
+        Self::boxed(min, max, replace, Target::World)
+    }
+
+    /// A stream for the world box `min..max` (exclusive maximum), saved as one structure.
+    pub(super) fn saved(min: [i32; 3], max: [i32; 3], name: String) -> Self {
+        let mut part = Self::boxed(min, max, false, Target::Saved { name });
+        part.commands = 2;
+        part
+    }
+
+    fn boxed(min: [i32; 3], max: [i32; 3], replace: bool, target: Target) -> Self {
         Self {
+            target,
+            open: true,
+            close: true,
+            commands: 4,
             min,
             max,
             next: min,
@@ -40,7 +74,28 @@ impl StructurePaste {
             tile: Tile::default(),
             sent: 0,
             started: false,
+            sent_box: None,
         }
+    }
+
+    /// Shares the host session with the copies around this one: `open` sends `begin`, `close`
+    /// sends `done`.
+    pub(super) fn session(mut self, open: bool, close: bool) -> Self {
+        self.open = open;
+        self.close = close;
+        self
+    }
+
+    fn label(&self) -> &'static str {
+        match self.target {
+            Target::World => "Structure Paste",
+            Target::Saved { .. } => "Structure Export",
+        }
+    }
+
+    /// The section just sent, once.
+    pub(super) fn take_sent_box(&mut self) -> Option<([i32; 3], [i32; 3])> {
+        self.sent_box.take()
     }
 
     pub(super) fn step(
@@ -49,18 +104,36 @@ impl StructurePaste {
         placement: Placement,
     ) -> Result<Option<String>, String> {
         if !self.started {
-            match gameplay::request_command(&format!("{PREFIX} begin")) {
+            let begin = match &self.target {
+                Target::World if !self.open => {
+                    self.started = true;
+                    return Ok(Some(format!("Preparing {}", self.label())));
+                }
+                Target::World => format!("{PREFIX} begin"),
+                Target::Saved { name } => format!(
+                    "{PREFIX} save {name} {} {} {}",
+                    self.max[0] - self.min[0],
+                    self.max[1] - self.min[1],
+                    self.max[2] - self.min[2]
+                ),
+            };
+            match gameplay::request_command(&begin) {
                 Ok(()) => self.started = true,
                 Err(error) if error == "command rate limit reached" => {}
                 Err(error) => return Err(error),
             }
-            return Ok(Some("Preparing Structure Paste".into()));
+            return Ok(Some(format!("Preparing {}", self.label())));
         }
         if self.next[1] >= self.max[1] {
-            return match gameplay::request_command(&format!("{PREFIX} done")) {
+            let end = match &self.target {
+                Target::World if !self.close => return Ok(None),
+                Target::World => format!("{PREFIX} done"),
+                Target::Saved { .. } => format!("{PREFIX} saved"),
+            };
+            return match gameplay::request_command(&end) {
                 Ok(()) => Ok(None),
                 Err(error) if error == "command rate limit reached" => {
-                    Ok(Some("Finishing Structure Paste".into()))
+                    Ok(Some(format!("Finishing {}", self.label())))
                 }
                 Err(error) => Err(error),
             };
@@ -134,25 +207,31 @@ impl StructurePaste {
             }
             if tile.cursor < volume {
                 return Ok(Some(format!(
-                    "Preparing structure | {} sections sent",
+                    "Preparing {} | {} sections sent",
+                    self.label(),
                     self.sent
                 )));
             }
             if tile.runs.is_empty() {
                 self.advance();
                 return Ok(Some(format!(
-                    "Preparing structure | {} sections sent",
+                    "Preparing {} | {} sections sent",
+                    self.label(),
                     self.sent
                 )));
             }
+            let origin: [i32; 3] = match self.target {
+                Target::World => self.next,
+                Target::Saved { .. } => std::array::from_fn(|i| self.next[i] - self.min[i]),
+            };
             tile.payload =
-                serde_json::to_string(&(self.next, size, self.replace, &tile.palette, &tile.runs))
+                serde_json::to_string(&(origin, size, self.replace, &tile.palette, &tile.runs))
                     .map_err(|error| error.to_string())?;
             if tile.payload.len() > 384 * 1024 {
                 return Err("Section exceeds Bedrock's paste transfer limit".into());
             }
         }
-        for _ in 0..4 {
+        for _ in 0..self.commands {
             let end = (tile.offset + FRAGMENT).min(tile.payload.len());
             let final_part = u8::from(end == tile.payload.len());
             let command = format!(
@@ -166,6 +245,7 @@ impl StructurePaste {
                     tile.part += 1;
                     if final_part == 1 {
                         self.sent += 1;
+                        self.sent_box = Some((self.next, std::array::from_fn(|i| self.next[i] + size[i])));
                         self.advance();
                         break;
                     }
@@ -175,7 +255,8 @@ impl StructurePaste {
             }
         }
         Ok(Some(format!(
-            "Structure paste | {} sections sent",
+            "{} | {} sections sent",
+            self.label(),
             self.sent
         )))
     }

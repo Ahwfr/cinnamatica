@@ -12,6 +12,7 @@ mod menu;
 mod native_bindings;
 mod overlay;
 mod paste;
+mod shapes;
 mod status;
 mod structure_paste;
 
@@ -61,7 +62,7 @@ thread_local! {
     /// Where the guide of a copied selection goes: the box's minimum corner.
     static ADOPT_ORIGIN: Cell<Option<[i32; 3]>> = const { Cell::new(None) };
     static RUNTIME: RefCell<(Runtime, Vec<&'static [u8]>, Options, Option<usize>)> =
-        const { RefCell::new((Runtime::Start, Vec::new(), Options { hold_place: false, placement_lock: false, auto_layer: true, paste_destroy: false, structure_paste: false, textured: true, target_info: TargetInfo::Off, fast_place: false, strict_place: false, correct_aim: false, bridge_place: true, lightness: DEFAULT_LIGHTNESS, library_revision: 0, deleted_entries: Vec::new(), remember_placement: true, saved_placements: BTreeMap::new(), tool_item: true }, None)) };
+        const { RefCell::new((Runtime::Start, Vec::new(), Options { hold_place: false, placement_lock: false, auto_layer: true, paste_destroy: false, textured: true, target_info: TargetInfo::Off, fast_place: false, strict_place: false, correct_aim: false, bridge_place: true, lightness: DEFAULT_LIGHTNESS, library_revision: 0, deleted_entries: Vec::new(), remember_placement: true, saved_placements: BTreeMap::new(), tool_item: true }, None)) };
 }
 
 /// What the "Target info" setting shows for the targeted block.
@@ -142,7 +143,6 @@ struct Options {
     placement_lock: bool,
     auto_layer: bool,
     paste_destroy: bool,
-    structure_paste: bool,
     textured: bool,
     target_info: TargetInfo,
     fast_place: bool,
@@ -167,7 +167,6 @@ impl Options {
                 "hold_place": self.hold_place,
                 "auto_layer": self.auto_layer,
                 "paste_destroy": self.paste_destroy,
-                "structure_paste": self.structure_paste,
                 "textured":self.textured, "fast_place": self.fast_place,
                 "assist": self.target_info != TargetInfo::Off, "target_info": self.target_info.key(),
                 "correct_aim": self.correct_aim,
@@ -218,7 +217,6 @@ impl Guest for Schematica {
                 options.hold_place = value["hold_place"].as_bool().unwrap_or(false);
                 options.auto_layer = value["auto_layer"].as_bool().unwrap_or(true);
                 options.paste_destroy = value["paste_destroy"].as_bool().unwrap_or(false);
-                options.structure_paste = value["structure_paste"].as_bool().unwrap_or(false);
                 options.textured = value["textured"].as_bool().unwrap_or(options.textured);
                 options.target_info = TargetInfo::saved(&value);
                 options.fast_place = value["fast_place"].as_bool().unwrap_or(options.fast_place);
@@ -451,6 +449,10 @@ struct Viewer {
     distant_scan_phase: u8,
     preview: Preview,
     whole: WholeGhost,
+    /// Single-cell updates around the camera, ahead of the tile verifier.
+    hot: overlay::HotWatch,
+    /// Cells the hot watch saw change, whose tiles are verified next.
+    hot_dirty: Vec<([i32; 3], u8)>,
     open_retries: u8,
     tiles: Vec<Tile>,
     retired: Vec<Tile>,
@@ -479,6 +481,7 @@ struct Viewer {
     /// A window refresh held over from a frame without enough fuel left for it.
     browser_refresh_pending: bool,
     browser_counts: std::cell::RefCell<browser::MaterialPageCounts>,
+    inventory: std::cell::RefCell<browser::InventoryCache>,
     library: Vec<String>,
     /// Library entry sizes, matching `library`.
     library_sizes: Vec<[i32; 3]>,
@@ -488,9 +491,13 @@ struct Viewer {
     auto_place: bool,
     dirty: bool,
     paste_confirm: bool,
+    export_run: Option<paste::ExportRun>,
+    /// The pending confirmation is for Export, not Paste.
+    export_confirming: bool,
     paste_notice: Option<(String, f32)>,
     cancel_structure: Option<(u64, i32)>,
     paste: Option<paste::Paste>,
+    repair: Option<paste::Repair>,
     last_label: String,
     /// Target info's Debug panel.
     debug: debug_info::DebugPanel,
@@ -529,6 +536,8 @@ impl Viewer {
             distant_scan_phase: 0,
             preview: Preview::default(),
             whole: WholeGhost::default(),
+            hot: overlay::HotWatch::default(),
+            hot_dirty: Vec::new(),
             open_retries: 0,
             tiles: Vec::new(),
             retired: Vec::new(),
@@ -551,6 +560,7 @@ impl Viewer {
             browser_names: Default::default(),
             browser_refresh_pending: false,
             browser_counts: Default::default(),
+            inventory: Default::default(),
             library_sizes: Vec::new(),
             library,
             last_item_highlights: Vec::new(),
@@ -566,15 +576,67 @@ impl Viewer {
             auto_place: loaded,
             dirty: false,
             paste_confirm: false,
+            export_run: None,
+            export_confirming: false,
             paste_notice: None,
             cancel_structure: None,
             paste: None,
+            repair: None,
             last_label: String::new(),
             debug: Default::default(),
             tool: Default::default(),
             adopt: None,
             menu_chorded: false,
             open_tab: None,
+        }
+    }
+
+    /// Reads the blocks around the camera and applies whatever changed in them: the ghost cell,
+    /// the status box, the material counts and the rail and chest outlines follow the block at
+    /// once. It runs first in the frame, before Fast Place and the section checks
+    /// spend the frame's fuel, so it is never starved and what they decide on is current.
+    fn hot_update(&mut self, dimension: i32) {
+        let Some(eye) = self.aim_ray().map(|(eye, _)| eye) else {
+            return;
+        };
+        let seen = self.hot.step(
+            &self.preview,
+            &self.schematic,
+            &mut self.whole,
+            &self.tiles,
+            dimension,
+            eye,
+        );
+        let mut tile_changed = false;
+        for change in seen {
+            let cell = change.world;
+            // The section that holds the cell takes the new status at once, so the
+            // material counts, the wrong-block boxes and the rail outlines follow
+            // the block now and do not wait for the section's next sample.
+            if let Some(tile) = self.tiles.iter_mut().find(|tile| tile.contains(cell)) {
+                tile_changed |= tile.apply_hot(
+                    &self.preview,
+                    &self.schematic,
+                    cell,
+                    change.status,
+                    change.skip,
+                );
+            }
+            self.hot_dirty.retain(|(known, _)| *known != cell);
+            // Kept until the tile that holds it has been checked again, not for a few
+            // frames: the tile needs several to receive a new sample and draw it, and
+            // a change dropped before then waited for the slow lap round the guide.
+            self.hot_dirty.push((cell, 120));
+        }
+        let excess = self.hot_dirty.len().saturating_sub(16);
+        self.hot_dirty.drain(..excess);
+        if tile_changed {
+            self.highlight_dirty = true;
+            self.highlight_again |= self.highlight_scan.is_some();
+        }
+        // The ghost's edits go to the game now, not at the end of a frame that may be out of fuel.
+        if self.whole.pending_edits() > 0 && budget::remaining_fuel() >= 300_000 {
+            self.whole.send();
         }
     }
 
@@ -588,6 +650,8 @@ impl Viewer {
             let scope = (world.session, world.dimension);
             if self.world != Some(scope) {
                 self.paste = None;
+                self.export_run = None;
+                self.repair = None;
                 self.paste_confirm = false;
                 let entering_from_world = self.world.is_some();
                 // Cinnabar invalidates drawing handles on dimension changes.
@@ -722,7 +786,8 @@ impl Viewer {
         if self.tool_frame(&keys) {
             return;
         }
-        let pasting = self.paste_step();
+        let pasting = self.paste_step() || self.repair_step();
+        self.export_step();
         if let Some((_, seconds)) = &mut self.paste_notice {
             *seconds -= keys.seconds;
             if *seconds <= 0.0 {
@@ -774,6 +839,16 @@ impl Viewer {
             return;
         }
         self.update_preview_window();
+        if self.shown
+            && !self.tiles.is_empty()
+            && self.retired.is_empty()
+            && self.placement.is_some()
+            && self.whole.active()
+            && self.preview.palette_ready(&self.schematic)
+            && let Some((_, dimension)) = self.world
+        {
+            self.hot_update(dimension);
+        }
         let world_target = gameplay::read_block_target()
             .ok()
             .flatten()
@@ -898,13 +973,33 @@ impl Viewer {
             }
             let whole = self.whole.active();
             let tile_lightness = (textured && !whole).then_some(lightness);
+            if whole {
+                // One section's boxes and outlines are redrawn per frame, when there is room.
+                if budget::remaining_fuel() >= 500_000
+                    && let Some(stale) = self.tiles.iter().position(|tile| tile.markers_stale)
+                {
+                    let (preview, schematic) = (&self.preview, &self.schematic);
+                    self.tiles[stale].rebuild_markers(preview, schematic, dimension);
+                }
+            }
+            // The tile of the oldest unverified change is stepped first.
+            let hot_cell = self.hot_dirty.first().map(|&(cell, _)| cell);
+            for (_, frames) in &mut self.hot_dirty {
+                *frames -= 1;
+            }
+            self.hot_dirty.retain(|&(_, frames)| frames > 0);
             // Alternate the hot tile and the background cursor. One tile can consume
             // most of a frame when many cells change or need discrepancy markers.
-            let priority = [recent, world_target, aimed]
+            let priority = [hot_cell, recent, world_target, aimed]
                 .into_iter()
                 .flatten()
                 .find_map(|cell| self.tiles.iter().position(|tile| tile.contains(cell)));
+            let hot_tile = hot_cell
+                .and_then(|cell| self.tiles.iter().position(|tile| tile.contains(cell)));
             self.scan_priority = !self.scan_priority;
+            // The tile of a fresh change takes every other frame until it has been checked
+            // again, and the lap round the guide takes the rest. Giving it every frame starved
+            // the lap, so tiles stayed unverified.
             let index = if self.scan_priority {
                 priority.unwrap_or(self.cursor)
             } else {
@@ -921,7 +1016,7 @@ impl Viewer {
                     self.whole
                         .scan_distant(&self.preview, &self.schematic, focus);
                 }
-            } else if budget::remaining_fuel() >= 650_000 {
+            } else if overlay::render_allowed(u64::from(budget::remaining_fuel()), 650_000) {
                 let (advance, updated) = self.tiles[index].step(
                     &self.preview,
                     &self.schematic,
@@ -930,6 +1025,16 @@ impl Viewer {
                     whole,
                 );
                 changed = updated;
+                if updated && let Some(hot) = hot_tile.filter(|&hot| hot == index) {
+                    // Checked again. A few more frames cover a sample taken just before the
+                    // block changed, then the changes it held stop waiting.
+                    let tile = &self.tiles[hot];
+                    for (cell, frames) in &mut self.hot_dirty {
+                        if tile.contains(*cell) {
+                            *frames = (*frames).min(6);
+                        }
+                    }
+                }
                 if self.tiles[index].ghost_dirty && whole && budget::remaining_fuel() >= 225_000 {
                     self.whole
                         .compare_tile(&self.preview, &self.schematic, &self.tiles[index]);
@@ -951,7 +1056,17 @@ impl Viewer {
                     self.tiles[next].prefetch();
                 }
             }
-            if whole && budget::remaining_fuel() >= 350_000 {
+            // A tile that rendered while the frame was short of fuel still owes its ghost
+            // changes; do not leave them until its next lap.
+            if whole
+                && budget::remaining_fuel() >= 450_000
+                && let Some(owing) = self.tiles.iter().position(|tile| tile.ghost_dirty)
+            {
+                self.whole
+                    .compare_tile(&self.preview, &self.schematic, &self.tiles[owing]);
+                self.tiles[owing].ghost_dirty = false;
+            }
+            if whole && budget::remaining_fuel() >= 300_000 {
                 self.whole.flush();
                 if self.whole.failed {
                     for tile in &mut self.tiles {
@@ -1296,7 +1411,12 @@ impl Viewer {
         let (eye, forward) = self.aim_ray()?;
         next_guide_cell(eye, forward, 6., |cell| {
             Some(cell) == obstruction
-                || (self.planned_block(cell).is_some() && self.may_need_block(cell))
+                || (self.planned_block(cell).is_some_and(|block| {
+                    // A thin block only counts where the ray really crosses it, so aiming
+                    // through the gap under a trapdoor or past a pane reaches what is behind.
+                    shapes::selection(block)
+                        .is_none_or(|shape| shapes::ray_hits(eye, forward, cell, &shape, 6.))
+                }) && self.may_need_block(cell))
         })
         .filter(|cell| Some(*cell) != obstruction)
     }
@@ -1345,6 +1465,8 @@ impl Viewer {
     }
 
     fn rebuild(&mut self) {
+        self.hot.clear();
+        self.hot_dirty.clear();
         self.whole.restart(
             self.placement.is_some() && self.shown && self.render_all && self.options.textured,
         );
@@ -1485,6 +1607,8 @@ impl Viewer {
     }
 
     fn release_for_switch(&mut self) -> bool {
+        self.hot.clear();
+        self.hot_dirty.clear();
         self.whole.clear();
         self.retired
             .extend(self.tiles.drain(..).filter(Tile::has_draws));

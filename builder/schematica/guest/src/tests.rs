@@ -79,6 +79,33 @@ fn hold_aim_stops_at_a_real_block_and_ignores_off_ray_ghosts() {
     assert_eq!(viewer.aimed_next_ghost(None), None);
 }
 
+#[test]
+fn aim_passes_through_the_empty_part_of_a_thin_ghost_to_the_one_behind() {
+    use schematica_core::{BlockState, StateValue};
+    let mut viewer = reference_viewer();
+    viewer.schematic = Schematic::new("Thin", [1, 1, 4]);
+    viewer.placement = Some(Placement::new([0, 0, 0]));
+    let look_from = |y: f32| gameplay::Snapshot {
+        session: 1,
+        dimension: 0,
+        eye: gameplay::Vector3 { x: 0.5, y, z: 3.5 },
+        yaw: 0.,
+        pitch: 0.,
+        frame_seconds: 0.016,
+    };
+    viewer.schematic.set(
+        [0, 0, 2],
+        BlockState::new("minecraft:stone_block_slab")
+            .with("minecraft:vertical_half", StateValue::Str("bottom".into())),
+    );
+    viewer.schematic.set([0, 0, 0], BlockState::new("minecraft:stone"));
+    // Looking over the low slab reaches the block behind it; looking at the slab picks it.
+    viewer.pose = Some(look_from(0.8));
+    assert_eq!(viewer.aimed_next_ghost(None), Some([0, 0, 0]));
+    viewer.pose = Some(look_from(0.3));
+    assert_eq!(viewer.aimed_next_ghost(None), Some([0, 0, 2]));
+}
+
 pub(super) fn reference_viewer() -> Viewer {
     let entries = [
         ("minecraft:oak_planks", 104),
@@ -125,7 +152,6 @@ pub(super) fn reference_viewer() -> Viewer {
             hold_place: false,
             auto_layer: true,
             paste_destroy: false,
-            structure_paste: false,
             remember_placement: false,
             saved_placements: BTreeMap::new(),
             tool_item: false,
@@ -175,7 +201,6 @@ fn menu_edits_turn_the_guide_and_select_layer_ranges() {
             hold_place: false,
             auto_layer: true,
             paste_destroy: false,
-            structure_paste: false,
             remember_placement: false,
             saved_placements: BTreeMap::new(),
             tool_item: false,
@@ -318,19 +343,57 @@ fn aiming_at_a_door_upper_half_uses_its_matching_lower_half() {
 #[test]
 fn material_page_counts_finish_over_multiple_frames() {
     let mut viewer = reference_viewer();
-    viewer.tiles.resize_with(10, Tile::default);
+    viewer.tiles.resize_with(70, Tile::default);
     viewer.tiles[0].stamp = Some(terrain::Stamp {
         session: 1,
         dimension: 0,
         registry: 1,
         revision: 0,
     });
+    // Thirty-two tiles are counted per call: three calls for seventy. Nothing is built, so
+    // the first row (cobblestone, 49 in the schematic) has all 49 left, not 0.
     for pending in [true, true, false] {
         let mut bindings = serde_json::Map::new();
         browser::bindings(&viewer, &mut bindings, &mut Vec::new());
         assert_eq!(viewer.material_counts_pending(), pending);
-        assert_eq!(bindings["#bw_row0_needed"], if pending { "…" } else { "0" });
+        assert_eq!(bindings["#bw_row0_needed"], if pending { "…" } else { "49" });
     }
+    // A finished page is remembered: asking again counts nothing.
+    let mut bindings = serde_json::Map::new();
+    browser::bindings(&viewer, &mut bindings, &mut Vec::new());
+    assert_eq!(bindings["#bw_row0_needed"], "49");
+    assert_eq!(bindings["#bw_row0_need"], true);
+    assert_eq!(bindings["#bw_row0_done"], false);
+    assert!(!viewer.material_counts_pending());
+    assert_eq!(bindings["#bw_progress_label"], "0% built  ·  0 / 171");
+}
+
+#[test]
+fn what_is_left_is_the_total_less_what_is_built_so_unchecked_cells_never_read_as_done() {
+    let mut viewer = reference_viewer();
+    viewer.tiles.resize_with(3, Tile::default);
+    viewer.tiles[0].stamp = Some(terrain::Stamp {
+        session: 1,
+        dimension: 0,
+        registry: 1,
+        revision: 0,
+    });
+    // Only the first tile has been checked, and it holds 40 built blocks. The other two
+    // tiles were never checked and add nothing to what is built.
+    viewer.tiles[0].built = 40;
+    let mut bindings = serde_json::Map::new();
+    browser::bindings(&viewer, &mut bindings, &mut Vec::new());
+    assert_eq!(bindings["#bw_progress_label"], "23% built  ·  40 / 171");
+    // Placing or breaking a block changes what is built, so the page's counts start again.
+    for _ in 0..4 {
+        browser::bindings(&viewer, &mut bindings, &mut Vec::new());
+    }
+    assert!(!viewer.material_counts_pending());
+    viewer.tiles[0].built = 41;
+    let mut bindings = serde_json::Map::new();
+    browser::bindings(&viewer, &mut bindings, &mut Vec::new());
+    assert_eq!(bindings["#bw_progress_label"], "23% built  ·  41 / 171");
+    assert_eq!(bindings["#bw_row0_needed"], "49");
 }
 
 #[test]
@@ -417,4 +480,27 @@ fn liquids_have_no_item_and_a_powered_torch_is_offered_as_the_item_it_places() {
         unlit_variant(BlockState::new("minecraft:stone")).name,
         "minecraft:stone"
     );
+}
+
+#[test]
+fn the_have_column_counts_what_the_player_carries_under_the_item_name() {
+    assert_eq!(browser::item_for_block("minecraft:soul_sand"), "minecraft:soul_sand");
+    assert_eq!(browser::item_for_block("minecraft:reeds"), "minecraft:sugar_cane");
+    assert_eq!(browser::item_for_block("minecraft:unpowered_repeater"), "minecraft:repeater");
+    assert_eq!(browser::item_for_block("minecraft:spruce_wall_sign"), "minecraft:spruce_sign");
+    assert_eq!(browser::item_for_block("minecraft:standing_sign"), "minecraft:oak_sign");
+    let viewer = reference_viewer();
+    {
+        let mut cache = viewer.inventory.borrow_mut();
+        cache.set_for_test(&[("minecraft:cobblestone", 37)]);
+    }
+    let mut bindings = serde_json::Map::new();
+    browser::bindings(&viewer, &mut bindings, &mut Vec::new());
+    let names: Vec<_> = (0..4)
+        .map(|row| (bindings[&format!("#bw_row{row}_name")].clone(), bindings[&format!("#bw_row{row}_have")].clone()))
+        .collect();
+    let cobble = names.iter().find(|(name, _)| name.as_str().is_some_and(|n| n.to_lowercase().contains("cobblestone"))).unwrap();
+    assert_eq!(cobble.1, "37");
+    let other = names.iter().find(|(name, _)| !name.as_str().unwrap().to_lowercase().contains("cobblestone")).unwrap();
+    assert_eq!(other.1, "0");
 }
