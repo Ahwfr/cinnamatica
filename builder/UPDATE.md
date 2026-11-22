@@ -1,5 +1,10 @@
 # Installing and updating Builder
 
+0.3.62 fixes large-palette guest fuel exhaustion during container highlight and
+Materials preparation. This is a guest-only behavior change; it reuses the current
+native client and preserves library payloads and profile settings. The importer
+and build stamps advance together. No installer is published by this local update.
+
 0.3.61 fixes imports whose decoded block-state palette exceeds 32 KiB, even when the
 compressed source file is smaller. It changes the importer and guest decoder, not
 the native client API. Both are updated together; old library payloads and the

@@ -1,3 +1,10 @@
+# Cinnamatica 0.3.62
+
+- Fix guest restarts while loading schematics with large palettes. Container-highlight identifiers and old-list cleanup are processed incrementally, with publication on a separate frame, instead of sorting hundreds of identifiers after counting the guide.
+- Bound Materials name preparation and palette matching so panel serialization has enough fuel. Large lists finish preparing without restarting the mod or closing the menu.
+- Keep the whole retained hologram renderer and existing imported library format unchanged.
+- Verified with the reported 23101 schematic in the actual WASM host at its normal frame limit: full grid submitted, more than 800 highlight identifiers published, Materials rows populated, and over 4,000 callbacks without recovery. The probe simulates native mesh-ready feedback; live GPU appearance is not verified by it. Also covered by 97 guest unit tests, including a 1,024-material preparation regression.
+
 # Cinnamatica 0.3.61
 
 - Remove the independent 32 KiB decoded-palette limit. Block-state descriptions and cell data now share the existing library-entry capacity, in both the importer and guest decoder. The fixed library slot and existing imported libraries stay compatible.

@@ -383,6 +383,7 @@ struct Viewer {
     layer_counts: Vec<u64>,
     layer_count_cursor: usize,
     highlight_scan: Option<(usize, Vec<u64>)>,
+    highlight_publication: Option<HighlightPublication>,
     highlight_again: bool,
     highlight_delay: u8,
     placement: Option<Placement>,
@@ -459,6 +460,14 @@ enum Chord {
     Open(browser::Tab),
 }
 
+/// Identifier preparation is incremental too, not just cell counting.
+struct HighlightPublication {
+    needed: Vec<u64>,
+    cursor: usize,
+    names: Vec<String>,
+    seen: Vec<usize>,
+}
+
 impl Viewer {
     fn new(
         schematic: Schematic,
@@ -510,6 +519,7 @@ impl Viewer {
             layer_counts: Vec::new(),
             layer_count_cursor: 0,
             highlight_scan: None,
+            highlight_publication: None,
             highlight_again: false,
             highlight_delay: 0,
             active_entry: None,
@@ -573,7 +583,8 @@ impl Viewer {
         self.hot_dirty.drain(..excess);
         if tile_changed {
             self.highlight_dirty = true;
-            self.highlight_again |= self.highlight_scan.is_some();
+            self.highlight_again |=
+                self.highlight_scan.is_some() || self.highlight_publication.is_some();
         }
         // The ghost's edits go to the game now, not at the end of a frame that may be out of fuel.
         if self.whole.pending_edits() > 0 && budget::remaining_fuel() >= 300_000 {
@@ -1013,7 +1024,8 @@ impl Viewer {
             }
             if changed {
                 self.highlight_dirty = true;
-                self.highlight_again |= self.highlight_scan.is_some();
+                self.highlight_again |=
+                    self.highlight_scan.is_some() || self.highlight_publication.is_some();
                 let [width, height, depth] = self.schematic.size();
                 if self.options.auto_layer
                     && self.layer_mode == 1
@@ -1411,6 +1423,7 @@ impl Viewer {
         self.layer_counts.clear();
         self.layer_count_cursor = 0;
         self.highlight_scan = None;
+        self.highlight_publication = None;
         self.highlight_again = false;
         self.highlight_delay = 0;
         self.highlight_dirty = true;
@@ -1435,7 +1448,11 @@ impl Viewer {
 
     /// Publishes required item names for the selected layers, less verified placed cells.
     fn publish_item_highlights(&mut self) {
-        let mut names = Vec::new();
+        if self.highlight_publication.is_some() {
+            self.publish_highlight_names();
+            return;
+        }
+        let names = Vec::new();
         if self.loaded && self.placement.is_some() {
             if self.layers() == LayerMode::All
                 && self.layer_counts.is_empty()
@@ -1448,8 +1465,7 @@ impl Viewer {
                     .iter()
                     .map(|line| line.name.clone())
                     .collect::<Vec<_>>();
-                all.sort_unstable();
-                all.dedup();
+                // Material totals already contain one entry per identifier.
                 all.truncate(1024);
                 if !all.is_empty() && hud::set_item_highlights(&all).is_ok() {
                     self.last_item_highlights = all;
@@ -1480,14 +1496,13 @@ impl Viewer {
                 return;
             }
             let (_, needed) = self.highlight_scan.take().unwrap();
-            names.extend(needed.into_iter().enumerate().filter_map(|(index, count)| {
-                let block = &self.schematic.palette()[index];
-                (count > 0 && !block.is_air() && !block.is_placement_artifact())
-                    .then(|| block.name.clone())
-            }));
-            names.sort_unstable();
-            names.dedup();
-            names.truncate(1024);
+            self.highlight_publication = Some(HighlightPublication {
+                seen: Vec::with_capacity(needed.len()),
+                names: Vec::with_capacity(needed.len()),
+                needed,
+                cursor: 0,
+            });
+            return;
         }
         if names != self.last_item_highlights {
             if hud::set_item_highlights(&names).is_err() {
@@ -1495,6 +1510,56 @@ impl Viewer {
             }
             self.last_item_highlights = names;
         }
+        self.highlight_dirty = std::mem::take(&mut self.highlight_again);
+    }
+
+    fn publish_highlight_names(&mut self) {
+        let pending = self.highlight_publication.as_mut().unwrap();
+        let end = (pending.cursor + 24).min(pending.needed.len());
+        while pending.cursor < end && budget::remaining_fuel() >= 500_000 {
+            let index = pending.cursor;
+            pending.cursor += 1;
+            let block = &self.schematic.palette()[index];
+            if pending.needed[index] > 0
+                && !block.is_air()
+                && !block.is_placement_artifact()
+            {
+                if let Err(offset) = pending.seen.binary_search_by(|&previous| {
+                    self.schematic.palette()[previous].name.cmp(&block.name)
+                }) {
+                    pending.seen.insert(offset, index);
+                    pending.names.push(block.name.clone());
+                }
+            }
+        }
+        if pending.cursor < pending.needed.len() {
+            return;
+        }
+        // Give ABI lowering the complete identifier list a fresh frame.
+        if pending.cursor == pending.needed.len() {
+            pending.cursor += 1;
+            return;
+        }
+        if pending.cursor == pending.needed.len() + 1 {
+            if pending.names != self.last_item_highlights
+                && hud::set_item_highlights(&pending.names).is_err()
+            {
+                return;
+            }
+            std::mem::swap(&mut self.last_item_highlights, &mut pending.names);
+            pending.cursor += 1;
+            return;
+        }
+        // Releasing the previous list's hundreds of allocations is work too.
+        for _ in 0..24 {
+            if pending.names.pop().is_none() {
+                break;
+            }
+        }
+        if !pending.names.is_empty() {
+            return;
+        }
+        self.highlight_publication = None;
         self.highlight_dirty = std::mem::take(&mut self.highlight_again);
     }
 
@@ -1516,6 +1581,7 @@ impl Viewer {
         }
         self.tile_focus = focus;
         self.highlight_scan = None;
+        self.highlight_publication = None;
         self.highlight_dirty = true;
         let mut previous: BTreeMap<_, _> = self
             .tiles

@@ -1151,7 +1151,8 @@ fn spare_fuel() -> u64 {
 
 /// Fuel the Materials page leaves for the rest of the frame, and the most it counts per call.
 const COUNT_RESERVE: u64 = 1_100_000;
-const PALETTE_PER_CALL: usize = 512;
+// Leave room for row bindings, icon data and the panel patch in this callback.
+const PALETTE_PER_CALL: usize = 32;
 const TILES_PER_CALL: usize = 32;
 
 impl Viewer {
@@ -1191,7 +1192,7 @@ impl Viewer {
             names.clear();
         }
         let start = names.len();
-        let end = (start + 64).min(self.materials.len());
+        let end = (start + 8).min(self.materials.len());
         for index in start..end {
             let name = std::rc::Rc::<str>::from(display_name(&self.materials[index].name));
             let offset = names.partition_point(|line| line.1 <= name);
@@ -1866,11 +1867,31 @@ mod tests {
         assert!(viewer.browser_search_changed(SEARCH_ID, String::new()));
         let line = viewer.materials[0].clone();
         viewer.materials = (0..ROWS + 1).map(|_| line.clone()).collect();
+        while viewer.material_names_pending() {
+            viewer.browser_materials();
+        }
         assert!(viewer.browser_scroll(true));
         let mut out = Map::new();
         bindings(&viewer, &mut out, &mut Vec::new());
         assert_eq!(out["#bw_row0_visible"], true);
         assert_eq!(out["#bw_row1_visible"], false);
+    }
+
+    #[test]
+    fn wide_material_list_prepares_in_small_batches_without_losing_rows() {
+        let mut viewer = crate::tests::reference_viewer();
+        viewer.materials = (0..1024).rev().map(|index| crate::MaterialLine {
+            name: format!("minecraft:material_{index:04}"), total: 1, missing: 1,
+        }).collect();
+        for prepared in 1..=128 {
+            let rows = viewer.browser_materials();
+            assert_eq!(viewer.browser_names.borrow().as_ref().unwrap().1.len(), prepared * 8);
+            if prepared < 128 { assert!(rows.is_empty()); }
+            else {
+                assert_eq!(rows.len(), 1024);
+                assert!(rows.windows(2).all(|pair| pair[0].1 <= pair[1].1));
+            }
+        }
     }
 
     #[test]
