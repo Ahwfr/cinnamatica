@@ -1331,6 +1331,12 @@ fn compare(
         (true, true) => CellStatus::Correct,
         (true, false) => CellStatus::Extra,
         (false, true) => CellStatus::Missing,
+        (false, false) if matches!(name, "minecraft:water" | "minecraft:flowing_water")
+            && !ignored_material(&expected.name) => CellStatus::Missing,
+        (false, false) if name == "minecraft:dirt"
+            && matches!(expected.name.as_str(), "minecraft:farmland" | "minecraft:grass_path") => CellStatus::WrongState,
+        (false, false) if name.starts_with("minecraft:cave_vines")
+            && expected.name.starts_with("minecraft:cave_vines") && name != expected.name => CellStatus::WrongState,
         // Fast Place builds a double slab as the full block of its material.
         (false, false) if built_as_full_block(&expected.name, name) => CellStatus::Correct,
         // A powered or lit block counts as its plain block; the world lights it.
@@ -1464,7 +1470,7 @@ fn preview_states_match(name: &str, expected: &str, actual: &str) -> bool {
             !((leaves && matches!(key.as_str(), "persistent_bit" | "update_bit"))
                 || (redstone && key.starts_with("redstone_"))
                 || (observer && key == "powered_bit")
-                || (hopper && matches!(key.as_str(), "toggle_bit" | "facing_direction")))
+                || (hopper && key == "toggle_bit"))
         });
         if gate {
             values.remove("in_wall_bit");
@@ -1927,6 +1933,29 @@ fn block(name: &str) -> draw::NamedBlock {
 }
 
 #[test]
+fn dirt_is_unfinished_soil_and_water_is_an_available_aquatic_destination() {
+    let world = region_of(&["minecraft:dirt", "minecraft:water"]);
+    for name in ["minecraft:farmland", "minecraft:grass_path"] {
+        assert_eq!(compare_cell(&world, 0, &block(name), false), (CellStatus::WrongState, false));
+    }
+    for name in ["minecraft:kelp", "minecraft:seagrass", "minecraft:sea_pickle"] {
+        assert_eq!(compare_cell(&world, 1, &block(name), false), (CellStatus::Missing, false));
+    }
+}
+
+#[test]
+fn hoppers_and_calibrated_sensors_keep_orientation_but_ignore_live_power_phase() {
+    let state = |key: &str, value: serde_json::Value| json!({key: {"type":"int", "value":value}}).to_string();
+    assert!(!preview_states_match("minecraft:hopper", &state("facing_direction", json!(0)), &state("facing_direction", json!(3))));
+    let sensor = |direction: &str, phase: u8| json!({
+        "minecraft:cardinal_direction":{"type":"string","value":direction},
+        "sculk_sensor_phase":{"type":"int","value":phase}
+    }).to_string();
+    assert!(preview_states_match("minecraft:calibrated_sculk_sensor", &sensor("south", 0), &sensor("south", 2)));
+    assert!(!preview_states_match("minecraft:calibrated_sculk_sensor", &sensor("south", 0), &sensor("north", 0)));
+}
+
+#[test]
 fn water_lava_and_powder_snow_are_never_reported_but_other_blocks_still_are() {
     let world = region_of(&[
         "minecraft:air",
@@ -1964,14 +1993,14 @@ fn water_lava_and_powder_snow_are_never_reported_but_other_blocks_still_are() {
         compare_cell(&world, 2, &block("minecraft:air"), true),
         (CellStatus::Extra, false)
     );
-    // A planned stone block is still missing or wrong when the world has air or water there.
+    // Water leaves a planned block missing and available for placement.
     assert_eq!(
         compare_cell(&world, 0, &block("minecraft:stone"), false),
         (CellStatus::Missing, false)
     );
     assert_eq!(
         compare_cell(&world, 1, &block("minecraft:stone"), false),
-        (CellStatus::Wrong, false)
+        (CellStatus::Missing, false)
     );
 }
 

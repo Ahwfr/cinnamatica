@@ -415,12 +415,12 @@ fn retained_partial_edits_keep_the_context_of_reused_sections_before_the_next_pr
 fn block_entity_drawn_blocks_mesh_as_a_stand_in_cube() {
     let mut grid = grid([1; 3]);
     grid.palette = vec![BlockState::Named {
-        name: "minecraft:bed".into(),
+        name: "minecraft:chalkboard".into(),
         states: "{}".into(),
     }];
-    // As in game, the bed's own terrain visual is empty and the stand-in is a cube.
+    // As in game, the chalkboard's own terrain visual is empty and the stand-in is a cube.
     let named = |name: &str, _: &str| match name {
-        "minecraft:bed" => Some(1),
+        "minecraft:chalkboard" => Some(1),
         name if name == ENTITY_DRAWN_STAND_IN => Some(2),
         _ => None,
     };
@@ -432,7 +432,7 @@ fn block_entity_drawn_blocks_mesh_as_a_stand_in_cube() {
             Default::default(),
         )
         .unwrap();
-    assert_eq!(mesh.sections.len(), 1, "the bed cell has geometry");
+    assert_eq!(mesh.sections.len(), 1, "the fallback cell has geometry");
     assert!(mesh.triangles > 0);
     assert!(entity_drawn("minecraft:trapped_chest") && entity_drawn("minecraft:white_shulker_box"));
     assert!(!entity_drawn("minecraft:furnace") && !entity_drawn("minecraft:oak_planks"));
@@ -448,6 +448,12 @@ fn chests_and_shulker_boxes_leave_a_hole_for_the_client_to_draw_the_real_model()
         "minecraft:waxed_weathered_copper_chest",
         "minecraft:blue_shulker_box",
         "minecraft:undyed_shulker_box",
+        "minecraft:bed",
+        "minecraft:standing_banner",
+        "minecraft:wall_banner",
+        "minecraft:skeleton_skull",
+        "minecraft:decorated_pot",
+        "minecraft:conduit",
     ] {
         assert!(entity_overlaid(name), "{name}");
         let mut grid = grid([1; 3]);
@@ -465,9 +471,16 @@ fn chests_and_shulker_boxes_leave_a_hole_for_the_client_to_draw_the_real_model()
                 Default::default(),
             )
             .unwrap();
-        assert_eq!(mesh.triangles, 0, "{name} draws nothing in the terrain mesh");
+        assert_eq!(
+            mesh.triangles, 0,
+            "{name} draws nothing in the terrain mesh"
+        );
     }
-    for name in ["minecraft:bed", "minecraft:furnace", "minecraft:oak_planks", "minecraft:chest_boat"] {
+    for name in [
+        "minecraft:furnace",
+        "minecraft:oak_planks",
+        "minecraft:chest_boat",
+    ] {
         assert!(!entity_overlaid(name), "{name}");
     }
 }
@@ -479,11 +492,20 @@ fn block_entity_stand_ins_look_like_the_block_not_white() {
         ("minecraft:trapped_chest", "minecraft:spruce_planks"),
         ("minecraft:ender_chest", "minecraft:obsidian"),
         ("minecraft:blue_shulker_box", "minecraft:blue_concrete"),
-        ("minecraft:light_gray_shulker_box", "minecraft:light_gray_concrete"),
+        (
+            "minecraft:light_gray_shulker_box",
+            "minecraft:light_gray_concrete",
+        ),
         ("minecraft:undyed_shulker_box", "minecraft:purple_concrete"),
         ("minecraft:copper_chest", "minecraft:copper_block"),
-        ("minecraft:waxed_weathered_copper_chest", "minecraft:weathered_copper"),
-        ("minecraft:oxidized_copper_golem_statue", "minecraft:oxidized_copper"),
+        (
+            "minecraft:waxed_weathered_copper_chest",
+            "minecraft:weathered_copper",
+        ),
+        (
+            "minecraft:oxidized_copper_golem_statue",
+            "minecraft:oxidized_copper",
+        ),
         ("minecraft:bed", "minecraft:white_wool"),
         ("minecraft:something_new", ENTITY_DRAWN_STAND_IN),
     ] {
@@ -495,12 +517,12 @@ fn block_entity_stand_ins_look_like_the_block_not_white() {
 fn a_missing_stand_in_falls_back_to_the_plain_cube() {
     let mut grid = grid([1; 3]);
     grid.palette = vec![BlockState::Named {
-        name: "minecraft:bed".into(),
+        name: "minecraft:chalkboard".into(),
         states: "{}".into(),
     }];
     // The registry knows the plain cube but not the wool: the grid still meshes.
     let named = |name: &str, _: &str| match name {
-        "minecraft:bed" => Some(1),
+        "minecraft:chalkboard" => Some(1),
         name if name == ENTITY_DRAWN_STAND_IN => Some(2),
         _ => None,
     };

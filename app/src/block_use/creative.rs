@@ -215,8 +215,24 @@ pub(super) fn full_block_offer(
     collisions: &PhysicsCollisionRegistries,
     stream: &chunk_pipeline::WorldStream,
     mut offer: mod_host::CreativePlacementOffer,
+    survival: bool,
 ) -> mod_host::CreativePlacementOffer {
     let mode = stream.network_id_mode();
+    if survival
+        && matches!(
+            offer.name.as_str(),
+            "minecraft:farmland" | "minecraft:grass_path"
+        )
+    {
+        if let Some(dirt) = collisions.block_default_runtime_id(mode, "minecraft:dirt") {
+            offer.name = "minecraft:dirt".into();
+            offer.states = collisions
+                .block_canonical_state(mode, dirt)
+                .unwrap_or("{}")
+                .to_owned();
+            return offer;
+        }
+    }
     let full = collisions
         .block_default_runtime_id(mode, &offer.name)
         .and_then(|slab| {
@@ -332,7 +348,12 @@ pub(super) fn try_start(
         bevy::log::debug!(support = ?observed.target.position, face = observed.target.face, "Fast Place: native hit has no schematic offer");
         return false;
     };
-    let offer = full_block_offer(&context.collisions, stream, offer);
+    let offer = full_block_offer(
+        &context.collisions,
+        stream,
+        offer,
+        player.facts.player_game_mode() == Some(PlayerGameMode::Survival),
+    );
     bevy::log::debug!(block = %offer.name, states = %offer.states, ghost = ?offer.position,
         support = ?observed.target.position, face = observed.target.face, "Fast Place: examining use press");
     let Some(game_mode @ (PlayerGameMode::Creative | PlayerGameMode::Survival)) =
@@ -376,9 +397,12 @@ pub(super) fn try_start(
     if !interacting
         && !destination.is_some_and(|block| {
             let fact = context.collisions.block_facts(mode, block);
-            fact.traits.contains(assets::registry::BlockTraits::AIR)
-                || (gameplay::placement_plants::supported(&offer.name)
-                    && gameplay::placement_plants::replaceable(fact))
+            gameplay::placement_items::replaceable_destination(fact)
+                || super::orientation::needs_stack(
+                    &offer,
+                    context.collisions.block_identifier(mode, block),
+                    context.collisions.block_canonical_state(mode, block),
+                )
         })
     {
         bevy::log::debug!(ghost = ?offer.position, "Fast Place: destination is occupied or not loaded");
@@ -425,16 +449,21 @@ pub(super) fn try_start(
     let use_air = offer.strict_state
         && bridge
         && observed.target.runtime_id == stream.air_block_id()
-        && observed.target.position == offer.position;
-    let replacing_plant = gameplay::placement_plants::supported(&offer.name)
-        && observed.target.position == offer.position
-        && gameplay::placement_plants::replaceable(
+        && observed.target.position == super::orientation::air_click_position(&offer);
+    let replacing_plant = observed.target.position == offer.position
+        && (gameplay::placement_items::replaceable_destination(
             context
                 .collisions
                 .block_facts(mode, observed.target.runtime_id),
-        );
-    // Without the support face the press cannot place, but a click still puts the planned
-    // block's item in the hand so the player can place it themselves.
+        ) || super::orientation::needs_stack(
+            &offer,
+            context
+                .collisions
+                .block_identifier(mode, observed.target.runtime_id),
+            context
+                .collisions
+                .block_canonical_state(mode, observed.target.runtime_id),
+        ));
     let select_only = observed.target.face > 5
         || (!use_air
             && !replacing_plant
@@ -812,7 +841,8 @@ pub(super) fn resume(
     } else {
         observed
     };
-    let use_air = observed.target.position == pending.offer.position
+    let use_air = observed.target.position
+        == super::orientation::air_click_position(&pending.offer)
         && observed.target.runtime_id == stream.air_block_id();
     // A click on a chest, furnace, lever or the like would use it; sneak first so it places.
     let interactive_support = !pending.interacting
@@ -822,7 +852,9 @@ pub(super) fn resume(
             .block_facts(stream.network_id_mode(), observed.target.runtime_id)
             .traits
             .contains(assets::registry::BlockTraits::INTERACTIVE);
-    if interactive_support && !state.sneaking {
+    if (interactive_support || super::orientation::free_hanging_sign(&pending.offer))
+        && !state.sneaking
+    {
         if let Some(policy) = context.creative.as_deref_mut() {
             bevy::log::debug!(ghost = ?pending.offer.position, support = ?observed.target.position,
                 "Fast Place: holding sneak to place against an interactive block");

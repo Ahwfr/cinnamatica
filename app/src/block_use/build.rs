@@ -154,6 +154,9 @@ fn unpredicted_face_places(
     face: u8,
 ) -> bool {
     use gameplay::placement_items::{standing_form, wall_form};
+    if expected.name.starts_with("minecraft:cave_vines") && placed == "minecraft:cave_vines" {
+        return face == 0;
+    }
     if placed == expected.name {
         return wall_form(collisions, mode, placed).is_none() || face == 1;
     }
@@ -341,9 +344,10 @@ fn prepare(
                                 observed.target.face)
                         })
                 })
-                && world.is_air(expected.position).unwrap_or(false)
+                && world.primary_runtime_id(expected.position).is_ok_and(|block|
+                    gameplay::placement_items::replaceable_destination(context.collisions.block_facts(mode, block)))
                 && (if attempt.air_place {
-                    observed.target.position == expected.position
+                    observed.target.position == super::orientation::air_click_position(expected)
                 } else {
                     surroundings.destination(observed.target.position, observed.target.face).0
                         == expected.position
@@ -354,12 +358,14 @@ fn prepare(
                     || super::orientation::wanted_face(expected)
                         .is_none_or(|face| observed.target.face == face))
                 && (!(expected.correct_aim || expected.strict_state)
-                    || super::orientation::wanted_quadrant(expected).is_none_or(|want| {
-                        super::orientation::look_quadrant(attempt.view.rotation()) == want
-                    }));
+                    || super::orientation::reported_facing_matches(expected, attempt.view.rotation()));
             let supported_door = placement.is_none()
-                && expected.name.ends_with("_door")
-                && (!expected.strict_state || super::orientation::door_matches_facing(expected, attempt.view.rotation()))
+                && (expected.name.ends_with("_door") || expected.name == "minecraft:bed")
+                && (!(expected.strict_state || expected.correct_aim)
+                    || if expected.name == "minecraft:bed" {
+                        super::orientation::wanted_quadrant(expected)
+                            == Some(super::orientation::look_quadrant(attempt.view.rotation()))
+                    } else { super::orientation::door_matches_facing(expected, attempt.view.rotation()) })
                 && paired_fits
                 && paired.and_then(|block| context.collisions.block_identifier(mode, block)) == Some(expected.name.as_str())
                 && surroundings.destination(observed.target.position, observed.target.face).0 == expected.position;
@@ -403,9 +409,11 @@ fn prepare(
             if !matches!(game_mode, Some(PlayerGameMode::Creative | PlayerGameMode::Survival))
                 || observed.selection.item.count() == 0
                 || (!world.is_air(expected.position).ok()?
-                    && !(gameplay::placement_plants::supported(&expected.name)
-                        && gameplay::placement_plants::replaceable(context.collisions.block_facts(mode,
-                            world.primary_runtime_id(expected.position).ok()?))))
+                    && !gameplay::placement_items::replaceable_destination(context.collisions.block_facts(mode,
+                            world.primary_runtime_id(expected.position).ok()?))
+                    && !super::orientation::needs_stack(expected,
+                        context.collisions.block_identifier(mode, world.primary_runtime_id(expected.position).ok()?),
+                        context.collisions.block_canonical_state(mode, world.primary_runtime_id(expected.position).ok()?)))
                 || placement.position != expected.position
                 || actual_name != Some(expected.name.as_str())
                 || ((expected.strict_state || expected.correct_aim)

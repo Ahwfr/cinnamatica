@@ -1,0 +1,78 @@
+//! Native block-entity models selected from a retained grid's canonical states.
+//! Block-entity NBT is not carried by BlockGrid, so these use plain/default artwork.
+
+use super::Piece;
+use assets::facts::{BlockEntityFacts, BlockEntityRenderer as R};
+use render_model::{BlockEntityKind, Facing};
+
+pub(super) fn piece(name: &str, states: &str) -> Option<Piece> {
+    let entry = BlockEntityFacts::pinned().by_block_identifier(name)?;
+    let state = super::super::super::state::BlockState::parse(states);
+    Some(match entry.renderer {
+        R::Bed => Piece::Bed(super::super::super::describe::bed(&state, None)?),
+        R::Banner => Piece::Banner {
+            wall: name
+                .contains("wall_")
+                .then(|| super::facing(states))
+                .flatten(),
+            rotation: state
+                .int("ground_sign_direction")
+                .unwrap_or(0)
+                .rem_euclid(16) as f32
+                * 22.5,
+        },
+        R::Skull => Piece::Skull(render_model::SkullModel {
+            kind: render_model::SkullKind::from_block_identifier(name)?,
+            mount: super::facing(states).map_or(
+                render_model::SkullMount::Floor {
+                    rotation_degrees: state.int("ground_sign_direction").unwrap_or(0) as f32 * 22.5,
+                },
+                render_model::SkullMount::Wall,
+            ),
+        }),
+        R::DecoratedPot => Piece::Pot(super::facing(states).unwrap_or(Facing::North)),
+        R::Conduit => Piece::Conduit,
+        R::Bell => Piece::Bell(
+            state
+                .text("attachment")
+                .and_then(render_model::BellAttachment::from_state)
+                .unwrap_or(render_model::BellAttachment::Standing),
+        ),
+        _ => return None,
+    })
+}
+
+impl Piece {
+    pub(in super::super) fn kind(self) -> BlockEntityKind {
+        match self {
+            Self::Chest(model) => BlockEntityKind::Chest(model),
+            Self::Shulker(model) => BlockEntityKind::Shulker(model),
+            Self::Bed(model) => BlockEntityKind::Bed(model),
+            Self::Skull(model) => BlockEntityKind::Skull(model),
+            Self::Banner { wall, rotation } => BlockEntityKind::Banner(render_model::BannerModel {
+                mount: wall.map_or(
+                    render_model::BannerMount::Standing {
+                        rotation_degrees: rotation,
+                    },
+                    render_model::BannerMount::Wall,
+                ),
+                base: assets::banner::color_linear(15),
+                layers: std::sync::Arc::from([]),
+            }),
+            Self::Pot(facing) => BlockEntityKind::DecoratedPot(render_model::DecoratedPotModel {
+                facing,
+                sherds: Default::default(),
+            }),
+            Self::Conduit => BlockEntityKind::Conduit(render_model::ConduitModel {
+                active: false,
+                hunting: false,
+                viewer_yaw_degrees: 0.,
+            }),
+            Self::Bell(attachment) => BlockEntityKind::Bell(render_model::BellModel {
+                attachment,
+                ring_direction: 0,
+                seconds_since_ring: 1000.,
+            }),
+        }
+    }
+}

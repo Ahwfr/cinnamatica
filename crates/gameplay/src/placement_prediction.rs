@@ -146,7 +146,6 @@ pub fn predicted_placement(
     let existing = world.primary_runtime_id(position).ok()?;
     if plant.is_some()
         || fact.placement == R::Candle
-        || fact.placement == R::SeaPickle
         || fact.placement == R::Vine
         || fact.traits.contains(T::MULTIFACE)
     {
@@ -164,8 +163,7 @@ pub fn predicted_placement(
             .block_facts(mode, existing)
             .traits
             .contains(T::AIR)
-        && !(plant.is_some()
-            && crate::placement_plants::replaceable(collisions.block_facts(mode, existing)))
+        && !crate::placement_items::replaceable_destination(collisions.block_facts(mode, existing))
     {
         return None;
     }
@@ -251,6 +249,16 @@ pub fn predicted_placement(
                 .or_else(|| resolve_placement_state(fact, canonical, context.input))?;
             (identity, states, false)
         };
+    if fact.placement == R::SeaPickle {
+        use sim::CollisionWorld;
+        let wet = world
+            .block_physics(position)
+            .ok()?
+            .layers
+            .iter()
+            .any(|layer| layer.flags.contains(sim::BlockPhysicsFlags::WATER));
+        crate::placement_state::set_bit(&mut states, "dead_bit", !wet)?;
+    }
     let placed_id =
         collisions.block_state_runtime_id(mode, I::Compiled(placed_identity), &states)?;
     let placed_fact = collisions.block_facts(mode, placed_id);

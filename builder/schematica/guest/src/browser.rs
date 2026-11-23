@@ -1414,6 +1414,10 @@ impl InventoryCache {
 pub(crate) fn item_for_block(block: &str) -> String {
     let name = block.strip_prefix("minecraft:").unwrap_or(block);
     let item = match name {
+        "farmland" | "grass_path" => "dirt",
+        "sweet_berry_bush" => "sweet_berries",
+        "cave_vines" | "cave_vines_body_with_berries" | "cave_vines_head_with_berries" => "glow_berries",
+        "pitcher_crop" => "pitcher_pod",
         "reeds" => "sugar_cane",
         "redstone_wire" => "redstone",
         "unpowered_repeater" | "powered_repeater" => "repeater",

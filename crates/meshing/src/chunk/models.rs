@@ -406,6 +406,7 @@ pub(crate) struct PaletteResolutionContext<'assets, 'chunks> {
     pub(crate) network_id_mode: NetworkIdMode,
     pub(crate) neighbourhood: &'assets MeshNeighbourhood<'chunks>,
     pub(crate) pane_links: &'assets [(u32, u8)],
+    pub(crate) independent_door_halves: bool,
 }
 
 pub(crate) fn adjacent_palette_entry<'a>(

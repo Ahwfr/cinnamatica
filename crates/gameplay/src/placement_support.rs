@@ -213,6 +213,9 @@ pub(crate) fn support_acceptance(
         return None;
     }
     if fact.placement == R::Vine {
+        if full_cube || support.support == SupportKind::Leaves {
+            return Some(true);
+        }
         return match support.support {
             SupportKind::Stone => Some(true),
             SupportKind::Air => Some(false),

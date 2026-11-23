@@ -79,7 +79,11 @@ pub fn resolve_placement_state(
         valid_property(fact, &states, P::Candles)?;
         set_value(&mut states, P::Candles.name(), Value::from(0))?;
         set_bit(&mut states, P::Lit.name(), false)?;
-    } else if fact.placement == R::Axis && only_keys(&states, &[P::PillarAxis.name()]) {
+    } else if fact.placement == R::Axis
+        && (only_keys(&states, &[P::PillarAxis.name()])
+            || (only_keys(&states, &[P::PillarAxis.name(), P::Deprecated.name()])
+                && value(&states, P::Deprecated.name())?.as_i64() == Some(0)))
+    {
         valid_property(fact, &states, P::PillarAxis)?;
         let axis = ["y", "y", "z", "z", "x", "x"][usize::from(input.face)];
         set_value(&mut states, P::PillarAxis.name(), Value::from(axis))?;
@@ -358,6 +362,19 @@ mod tests {
             click_position: [0.5, height, 0.5],
             yaw,
             pitch: 0.0,
+        }
+    }
+
+    #[test]
+    fn bone_and_hay_preserve_their_registered_deprecated_property() {
+        for name in ["minecraft:bone_block", "minecraft:hay_block"] {
+            for (face, axis) in ["y", "y", "z", "z", "x", "x"].into_iter().enumerate() {
+                let states = resolve_placement_state(name,
+                    r#"{"deprecated":{"type":"int","value":0},"pillar_axis":{"type":"string","value":"y"}}"#,
+                    input(face as u8, 0.5, 0.0)).expect(name);
+                assert_eq!(value(&states, "pillar_axis"), Some(&json!(axis)));
+                assert_eq!(value(&states, "deprecated"), Some(&json!(0)));
+            }
         }
     }
 

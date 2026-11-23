@@ -8,7 +8,7 @@ pub(super) fn select_template<'a>(
     coordinate: [usize; 3],
     entry: ResolvedPaletteEntry,
 ) -> Option<u32> {
-    assets::door::resolve_template(
+    let resolved = assets::door::resolve_template(
         context.visuals,
         entry.model_template,
         entry.variant,
@@ -27,5 +27,10 @@ pub(super) fn select_template<'a>(
             (neighbor.kind == VisualKind::Model)
                 .then_some((neighbor.model_template, neighbor.variant))
         },
-    )
+    );
+    resolved.or_else(|| {
+        context
+            .independent_door_halves
+            .then_some(entry.model_template)
+    })
 }

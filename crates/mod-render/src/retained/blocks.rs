@@ -66,11 +66,23 @@ fn entity_drawn_stand_in(name: &str) -> String {
 /// Whether the client draws `name` as a real block-entity model over a hologram (chests and
 /// shulker boxes), so the terrain mesh leaves a hole instead of a stand-in cube.
 pub fn entity_overlaid(name: &str) -> bool {
-    let short = name.strip_prefix("minecraft:").unwrap_or(name);
-    let short = short.strip_prefix("waxed_").unwrap_or(short);
-    matches!(short, "chest" | "trapped_chest" | "ender_chest")
-        || short.ends_with("copper_chest")
-        || short.ends_with("shulker_box")
+    use assets::facts::{BlockEntityFacts, BlockEntityRenderer as R};
+    BlockEntityFacts::pinned()
+        .by_block_identifier(name)
+        .is_some_and(|entry| {
+            matches!(
+                entry.renderer,
+                R::Chest
+                    | R::EnderChest
+                    | R::Shulker
+                    | R::Bed
+                    | R::Banner
+                    | R::Skull
+                    | R::DecoratedPot
+                    | R::Conduit
+                    | R::Bell
+            )
+        })
 }
 
 /// Whether a block of this palette reads the shelter of its whole vertical section column.
@@ -421,7 +433,11 @@ impl BlockGrid {
             .map(|state| {
                 let id = match state {
                     BlockState::RuntimeId(id) => Some(*id),
-                    BlockState::Named { name, .. } if entity_overlaid(name) => Some(air),
+                    BlockState::Named { name, .. }
+                        if entity_overlaid(name) && entity_drawn(name) =>
+                    {
+                        Some(air)
+                    }
                     BlockState::Named { name, .. } if entity_drawn(name) => {
                         named(&entity_drawn_stand_in(name), "{}")
                             .or_else(|| named(ENTITY_DRAWN_STAND_IN, "{}"))
@@ -575,6 +591,7 @@ impl BlockGrid {
                 meshing::MeshOptions {
                     rendering: settings,
                     pane_links: &palette.pane_links,
+                    independent_door_halves: true,
                     ..Default::default()
                 },
             );

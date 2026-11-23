@@ -1,3 +1,14 @@
+# Cinnamatica 0.3.63
+
+- Preserve the newer public-main Debug target readout, session-derived item routes, dropper prediction and stateless-block placement fixes (through public commit 460199c6d), alongside this repair.
+
+- Resolve registered item-form blocks even when their inventory stack advertises no block runtime ID. Add checked glow-berry, sweet-berry and pitcher-pod routes.
+- Correct sixteen-step standing sign/banner rotation, bed admission, hopper outlets, hanging-sign sneak selection, and the measured facing rules for bookshelves, grindstones, bells, beehives, campfires and calibrated sensors. Preserve bone/hay axis properties.
+- Allow replaceable vegetation and water destinations. Build snow/pickle/candle stacks one item at a time. In Survival, offer dirt for farmland/path guides and label that interim soil as wrong state.
+- Render beds, banners, heads, pots, conduits and bell bodies using native entity models. Entity ghosts now follow grid brightness/tint; add shulker outlines. Keep independently visible door halves meshed and remove slope depth bias that can bury thin vine/lichen planes behind real supports.
+- Correct the measured one-cell skull offset for V2 air clicks. Keep server-required support constraints; a packet cannot make every attachment legal in empty air.
+- See `BLOCK-BUGS-0.3.63.md` for evidence, remaining limitations and the in-world checklist. Native compilation, the production-module registry/rule probe and 104 guest tests passed during development; live GPU appearance and the complete integrated placement matrix still require testing with this client.
+
 # Cinnamatica 0.3.62
 
 - Fix guest restarts while loading schematics with large palettes. Container-highlight identifiers and old-list cleanup are processed incrementally, with publication on a separate frame, instead of sorting hundreds of identifiers after counting the guide.

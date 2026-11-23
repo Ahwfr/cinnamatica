@@ -1,5 +1,22 @@
 # Large-palette WASM regression probe
 
+## Native placement rule probe
+
+`placement-rules.rs` directly includes the owning gameplay placement modules and
+item-route module. Link it against this checkout's `assets`, `serde_json` and
+`serde` rlibs using the same Rust toolchain and dependency directory as the client.
+It is a small executable, not an app/UI test build. With an abort-panic client
+profile, compile it with `-C panic=abort` too.
+
+It checks real pinned-registry item aliases, all six bone/hay click faces, the
+stock-server-measured sensor/campfire/bookshelf/hive yaw tables, and horizontal
+and body-height barrel facing. The four connection constants are supplied only
+to satisfy the included placement-state module; fence/pane prediction is not
+tested by this probe. It completed successfully for 0.3.63. It does not send
+packets or certify the integrated Fast Place UI.
+
+## Large palettes
+
 `large-palette-budget.rs` drives the real guest through `mod_host`, using its
 normal 1,000,000 fuel frame limit. Native guest unit tests cannot detect fuel traps.
 

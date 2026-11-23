@@ -41,9 +41,6 @@ const BLOCK_ENTITY_ASSETS_FILENAME: &str = assets::carriers::BLOCK_ENTITY.output
 /// Block entities farther than this from the eye are not drawn.
 pub(super) const SCAN_RADIUS_BLOCKS: f32 = 64.0;
 const MAX_SUBMISSIONS: usize = 4_096;
-/// Light blue and a little dimmer, the look of the hologram's own blocks.
-const GHOST_TINT: [f32; 3] = [0.62, 0.8, 1.0];
-const GHOST_BRIGHTNESS: f32 = 0.85;
 const TICKS_PER_SECOND: f64 = 20.0;
 const TEXT_CACHE_ENTRIES: usize = 256;
 const TEXT_CACHE_BYTES: usize = 2 * 1024 * 1024;
@@ -153,7 +150,7 @@ pub(crate) struct BlockEntityRuntime {
     submissions: Vec<BlockEntitySubmission>,
     /// Chests and shulker boxes found in mods' retained block grids (the Schematica hologram).
     hologram: hologram::HologramPieces,
-    hologram_pieces: Vec<([i32; 3], hologram::Piece)>,
+    hologram_pieces: Vec<hologram::DrawPiece>,
 }
 
 impl BlockEntityRuntime {
@@ -772,22 +769,16 @@ pub(crate) fn update_block_entity_scene(
             .hologram
             .gather(&mod_scene.retained, dimension, eye, occupied, &mut pieces);
     }
-    for &(at, piece) in &pieces {
+    for drawn in &pieces {
+        let at = drawn.at;
         if submissions.len() >= MAX_SUBMISSIONS {
             break;
         }
-        let kind = match piece {
-            hologram::Piece::Chest(model) => BlockEntityKind::Chest(model),
-            hologram::Piece::Shulker(model) => BlockEntityKind::Shulker(model),
-        };
-        let (block_light, sky_light) = stream.light_level_at([at[0] as f32 + 0.5, at[1] as f32 + 0.5, at[2] as f32 + 0.5]);
+        let kind = drawn.piece.kind();
         // A ghost is washed light blue like the blocks of the hologram around it.
-        let light = match model_light(&kind, block_light, sky_light, daylight) {
-            BlockEntityLight::Scalar(value) => BlockEntityLight::Tinted {
-                value: value * GHOST_BRIGHTNESS,
-                tint: GHOST_TINT,
-            },
-            other => other,
+        let light = BlockEntityLight::Tinted {
+            value: 1.,
+            tint: drawn.tint,
         };
         submissions.push(BlockEntitySubmission {
             block: at,

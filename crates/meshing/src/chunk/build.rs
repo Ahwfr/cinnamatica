@@ -89,6 +89,9 @@ pub struct MeshOptions<'a> {
     pub surface_rules: &'a [crate::surface::SurfaceRule],
     /// Authored pane link masks for retained previews, indexed by network block state.
     pub pane_links: &'a [(u32, u8)],
+    /// Keep a door half's authored pose when its other half is absent from this view.
+    /// World chunks leave this off; independent block-grid snapshots may enable it.
+    pub independent_door_halves: bool,
 }
 
 /// Greedy-mesh the bounded palette snapshot with solved block/sky light.
@@ -227,6 +230,7 @@ fn mesh_sub_chunk_core<
         network_id_mode,
         neighbourhood,
         pane_links: options.pane_links,
+        independent_door_halves: options.independent_door_halves,
     };
 
     let seasonal_coverage =

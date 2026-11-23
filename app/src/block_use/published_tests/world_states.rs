@@ -63,19 +63,19 @@ fn world_controlled_states_do_not_block_fast_place_but_orientation_still_does() 
     ));
 }
 
-/// A hopper keeps whatever facing the click gives it.
+/// A hopper keeps its planned outlet; an air click can only produce the downward outlet.
 #[test]
-fn hoppers_ignore_the_planned_facing() {
+fn hoppers_keep_the_planned_facing() {
     use crate::block_use::orientation::{air_place_face, strict_state_matches};
     let hopper = offer(
         "minecraft:hopper",
         serde_json::json!({"facing_direction": {"type":"int","value":3}, "toggle_bit": {"type":"byte","value":0}}),
     );
-    assert!(strict_state_matches(
+    assert!(!strict_state_matches(
         &hopper,
         r#"{"facing_direction":{"type":"int","value":0},"toggle_bit":{"type":"byte","value":0}}"#
     ));
-    assert_eq!(air_place_face(&hopper), Some(1));
+    assert_eq!(air_place_face(&hopper), None);
 }
 
 /// A ceiling lever is placed only by clicking the underside of the block above; floor levers

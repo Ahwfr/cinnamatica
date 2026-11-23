@@ -1393,10 +1393,14 @@ impl Viewer {
         !self
             .planned_block(pos)
             .is_some_and(|block| unplaceable(&block.name))
-            && matches!(
-                self.tiles.iter().find_map(|tile| tile.status_at(pos)),
-                None | Some(CellStatus::Missing | CellStatus::Unloaded)
-            )
+            && match self.tiles.iter().find_map(|tile| tile.status_at(pos)) {
+                None | Some(CellStatus::Missing | CellStatus::Unloaded) => true,
+                Some(CellStatus::WrongState) => self.planned_block(pos).is_some_and(|block| {
+                    matches!(block.name.as_str(), "minecraft:snow_layer" | "minecraft:sea_pickle" | "minecraft:candle")
+                        || block.name.ends_with("_candle")
+                }),
+                _ => false,
+            }
     }
 
     /// Lock only ordinary placement into planned blocks, leaving the rest of the world usable.

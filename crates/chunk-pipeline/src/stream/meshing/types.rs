@@ -119,6 +119,7 @@ impl MeshSnapshot {
                 overlays: &overlays,
                 surface_rules: &self.surface_rules,
                 pane_links: &[],
+                independent_door_halves: false,
             },
             scratch,
         )

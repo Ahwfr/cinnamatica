@@ -105,6 +105,28 @@ pub(crate) fn named_states(
             set_bit(&mut states, "persistent_bit", true)?;
             set_bit(&mut states, "update_bit", false)?;
         }
+        "minecraft:barrel" => {
+            set_value(
+                &mut states,
+                "facing_direction",
+                Value::from(body_facing(position, player, yaw, 0.)?),
+            )?;
+            set_bit(&mut states, "open_bit", false)?;
+        }
+        "minecraft:calibrated_sculk_sensor" | "minecraft:campfire" | "minecraft:soul_campfire" => {
+            set_value(
+                &mut states,
+                "minecraft:cardinal_direction",
+                Value::from(["south", "west", "north", "east"][yaw_quadrant(yaw)?]),
+            )?;
+        }
+        "minecraft:chiseled_bookshelf" | "minecraft:beehive" | "minecraft:bee_nest" => {
+            set_value(
+                &mut states,
+                "direction",
+                Value::from((yaw_quadrant(yaw)? + 2) % 4),
+            )?;
+        }
         "minecraft:observer" => {
             // The facing property points toward the detecting face, away from the player.
             let face = body_facing(position, player, yaw, 0.)? ^ 1;

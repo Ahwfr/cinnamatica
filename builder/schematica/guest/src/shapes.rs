@@ -173,6 +173,15 @@ pub(crate) fn selection(block: &BlockState) -> Option<Shape> {
     if name == "bed" {
         return Some(vec![[0., 0., 0., 1., 0.5625, 1.]]);
     }
+    if name.ends_with("shulker_box") {
+        return Some(vec![[0., 0., 0., 1., 1., 1.]]);
+    }
+    if name == "decorated_pot" {
+        return Some(vec![[0.0625, 0., 0.0625, 0.9375, 1., 0.9375]]);
+    }
+    if name.ends_with("_head") || name.ends_with("_skull") {
+        return Some(vec![[0.25, 0., 0.25, 0.75, 0.5, 0.75]]);
+    }
     if name == "lantern" || name == "soul_lantern" {
         return Some(vec![if flag(block, "hanging")? {
             [0.3125, 0.125, 0.3125, 0.6875, 0.625, 0.6875]
@@ -198,7 +207,9 @@ pub(crate) fn outline(block: &BlockState) -> Option<[f32; 6]> {
     let name = block.name.strip_prefix("minecraft:").unwrap_or(&block.name);
     let rail = name == "rail" || name.ends_with("_rail");
     let chest = name == "chest" || name == "trapped_chest" || name == "ender_chest" || name.ends_with("copper_chest");
-    if !rail && !chest {
+    let entity = name.ends_with("shulker_box") || name == "bed" || name == "decorated_pot"
+        || name.ends_with("_head") || name.ends_with("_skull");
+    if !rail && !chest && !entity {
         return None;
     }
     match selection(block) {

@@ -38,12 +38,42 @@ pub fn item_block_route(identifier: &str) -> Option<&'static str> {
 /// The block an item places according to the route table, including items such as
 /// `minecraft:hopper` that place the same-named block without carrying it in their stack.
 pub fn item_places_block(identifier: &str) -> Option<&'static str> {
-    routes().get(identifier).map(String::as_str)
+    match identifier {
+        "minecraft:sweet_berries" => Some("minecraft:sweet_berry_bush"),
+        "minecraft:glow_berries" => Some("minecraft:cave_vines"),
+        "minecraft:pitcher_pod" => Some("minecraft:pitcher_crop"),
+        _ => routes().get(identifier).map(String::as_str),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::item_block_route;
+
+    #[test]
+    fn modern_seed_and_berry_routes_name_registered_blocks() {
+        let records = crate::read_registry_for_protocol(
+            crate::pinned_block_registry_bytes(),
+            crate::active_content_registry_protocol(),
+        )
+        .unwrap();
+        for (item, block) in [
+            ("sweet_berries", "sweet_berry_bush"),
+            ("glow_berries", "cave_vines"),
+            ("pitcher_pod", "pitcher_crop"),
+        ] {
+            let expected = format!("minecraft:{block}");
+            assert_eq!(
+                item_block_route(&format!("minecraft:{item}")),
+                Some(expected.as_str())
+            );
+            assert!(
+                records
+                    .iter()
+                    .any(|record| record.name.as_ref() == expected)
+            );
+        }
+    }
 
     #[test]
     fn sign_and_banner_items_route_to_their_standing_blocks() {

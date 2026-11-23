@@ -1,5 +1,11 @@
 # Installing and updating Builder
 
+0.3.63 changes both the native client and the mod. Update the entire portable
+package together; replacing only the WASM file does not install the placement
+and native-model fixes. Existing library slots and profiles remain compatible.
+This local update does not publish an installer. See BLOCK-BUGS-0.3.63.md for
+the test checklist and server-enforced limitations.
+
 0.3.62 fixes large-palette guest fuel exhaustion during container highlight and
 Materials preparation. This is a guest-only behavior change; it reuses the current
 native client and preserves library payloads and profile settings. The importer

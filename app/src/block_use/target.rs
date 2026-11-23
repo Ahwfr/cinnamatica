@@ -146,22 +146,27 @@ pub(super) fn bridge_target(
                     offer,
                     context.collisions.block_identifier(mode, block),
                     context.collisions.block_canonical_state(mode, block),
-                ) && !(gameplay::placement_plants::supported(&offer.name)
-                    && gameplay::placement_plants::replaceable(
-                        context.collisions.block_facts(mode, block),
-                    ))
-                {
+                ) && !super::orientation::needs_stack(
+                    offer,
+                    context.collisions.block_identifier(mode, block),
+                    context.collisions.block_canonical_state(mode, block),
+                ) && !gameplay::placement_items::replaceable_destination(
+                    context.collisions.block_facts(mode, block),
+                ) {
                     miss = Some(BridgeMiss::Occupied);
                     return Ok(None);
                 }
                 let hit = world.block_interaction_ray_current(eye, forward, reach)?;
-                return Ok(hit.filter(|hit| {
+                let hit = hit.filter(|hit| {
                     let admitted = hit.block_pos == offer.position && hit.overlay.is_none();
                     if admitted {
                         direction = Some([forward.x as f32, forward.y as f32, forward.z as f32]);
                     }
                     admitted
-                }));
+                });
+                if hit.is_some() {
+                    return Ok(hit);
+                }
             }
             let eye_f32 = Vec3::new(eye.x as f32, eye.y as f32, eye.z as f32);
             let forward = Vec3::new(forward.x as f32, forward.y as f32, forward.z as f32);
@@ -278,7 +283,7 @@ pub(super) fn bridge_target(
             {
                 let Some(hit) = air_hit(
                     world,
-                    offer.position,
+                    super::orientation::air_click_position(offer),
                     face,
                     stream.air_block_id(),
                     eye_f32,

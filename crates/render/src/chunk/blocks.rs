@@ -41,11 +41,11 @@ struct Specialization;
 /// that is coplanar with a real block face, or with another ghost face of the same cell, would
 /// otherwise tie on depth and flicker. With the bias it loses every tie, so real blocks always
 /// cover their own ghost. The constant is in depth-buffer units (ULP-scaled on float depth) and
-/// the slope term covers faces seen at a grazing angle. Backends scale bias differently, so this
-/// stays small enough to move no visible geometry.
+/// No slope term: a screen-space slope bias can exceed the 1/256-block gap between a
+/// vine/lichen overlay and its real support, hiding an otherwise valid ghost model.
 const TINTED_DEPTH_BIAS: wgpu::DepthBiasState = wgpu::DepthBiasState {
     constant: -4,
-    slope_scale: -2.0,
+    slope_scale: 0.0,
     clamp: 0.0,
 };
 

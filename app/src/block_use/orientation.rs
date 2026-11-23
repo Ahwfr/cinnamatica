@@ -66,11 +66,23 @@ fn planned_face(planned: &serde_json::Map<String, serde_json::Value>) -> Option<
 /// lightning rods, amethyst buds and clusters, ladders), whose planned facing is that face.
 pub(super) fn wanted_face(offer: &CreativePlacementOffer) -> Option<u8> {
     let name = offer.name.as_str();
+    if matches!(name, "minecraft:bell" | "minecraft:grindstone") {
+        let state: serde_json::Value = serde_json::from_str(&offer.states).ok()?;
+        return match state["attachment"]["value"].as_str()? {
+            "standing" => Some(1),
+            "hanging" => Some(0),
+            "side" | "multiple" => state["direction"]["value"]
+                .as_u64()
+                .and_then(|direction| [3, 4, 2, 5].get(direction as usize).copied()),
+            _ => None,
+        };
+    }
     if ceiling_lever(offer) {
         return Some(0);
     }
     // Wall signs, wall banners and heads face out of the face they are placed against.
-    let face_derived = name.contains("wall_")
+    let face_derived = name == "minecraft:hopper"
+        || name.contains("wall_")
         || name.ends_with("_skull")
         || name.ends_with("_head")
         || name == "minecraft:end_rod"
@@ -83,7 +95,15 @@ pub(super) fn wanted_face(offer: &CreativePlacementOffer) -> Option<u8> {
     }
     let planned =
         serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&offer.states).ok()?;
-    planned_face(&planned).and_then(|face| u8::try_from(face).ok())
+    planned_face(&planned)
+        .and_then(|face| u8::try_from(face).ok())
+        .map(|face| {
+            if name == "minecraft:hopper" {
+                if face < 2 { 1 } else { face ^ 1 }
+            } else {
+                face
+            }
+        })
 }
 
 /// A lever planned on a ceiling, which only a click on the underside of the block above places.
@@ -102,13 +122,50 @@ fn ceiling_lever(offer: &CreativePlacementOffer) -> bool {
 pub(super) fn wanted_quadrant(offer: &CreativePlacementOffer) -> Option<usize> {
     let planned =
         serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&offer.states).ok()?;
+    if offer.name.ends_with("hanging_sign") && !free_hanging_sign(offer) {
+        return planned_face(&planned)
+            .and_then(|face| [2, 5, 3, 4].iter().position(|value| *value == face));
+    }
+    if offer.name == "minecraft:bed" {
+        return planned.get("direction")?["value"]
+            .as_u64()
+            .filter(|direction| *direction < 4)
+            .map(|direction| direction as usize);
+    }
+    if matches!(
+        offer.name.as_str(),
+        "minecraft:chiseled_bookshelf"
+            | "minecraft:grindstone"
+            | "minecraft:bell"
+            | "minecraft:beehive"
+            | "minecraft:bee_nest"
+    ) {
+        return planned.get("direction")?["value"]
+            .as_u64()
+            .filter(|direction| *direction < 4)
+            .map(|direction| (direction as usize + 2) % 4);
+    }
+    if let Some(orientation) = planned
+        .get("orientation")
+        .and_then(|state| state["value"].as_str())
+    {
+        let front = orientation.split('_').next()?;
+        return ["north", "east", "south", "west"]
+            .iter()
+            .position(|direction| *direction == front);
+    }
     if let Some(direction) = planned
         .get("minecraft:cardinal_direction")
         .and_then(|state| state["value"].as_str())
     {
         // Anvils face a quarter turn left of the player (`anvil_states` in gameplay); every
         // other block with this state faces the player.
-        let table = if offer.name.ends_with("anvil") {
+        let table = if matches!(
+            offer.name.as_str(),
+            "minecraft:campfire" | "minecraft:soul_campfire" | "minecraft:calibrated_sculk_sensor"
+        ) {
+            ["south", "west", "north", "east"]
+        } else if offer.name.ends_with("anvil") {
             ["east", "south", "west", "north"]
         } else {
             ["north", "east", "south", "west"]
@@ -184,18 +241,27 @@ pub(super) fn correction(
     )
     .with_cell_overlays(&overlays);
     if !world.is_air(expected.position).ok()?
-        && !(gameplay::placement_plants::supported(&expected.name)
-            && gameplay::placement_plants::replaceable(
-                context
-                    .collisions
-                    .block_facts(mode, world.primary_runtime_id(expected.position).ok()?),
-            ))
+        && !needs_stack(
+            expected,
+            context
+                .collisions
+                .block_identifier(mode, world.primary_runtime_id(expected.position).ok()?),
+            context
+                .collisions
+                .block_canonical_state(mode, world.primary_runtime_id(expected.position).ok()?),
+        )
+        && !gameplay::placement_items::replaceable_destination(
+            context
+                .collisions
+                .block_facts(mode, world.primary_runtime_id(expected.position).ok()?),
+        )
     {
         return None;
     }
     let planned = placement_properties(expected)?;
     if context.collisions.block_facts(mode, held).placement
         == assets::facts::PlacementRule::Unresolved
+        && !gameplay::placement_items::predicts_named_orientation(&expected.name)
     {
         // Nothing predicts this block's state, but its facing follows the look direction.
         // Turn to the planned facing and keep the support the player already aims at.
@@ -203,14 +269,21 @@ pub(super) fn correction(
         let forward = Vec3::from_array(observed.ray.direction).try_normalize()?;
         let view = *context.view;
         if let Some(face) = wanted_face(expected) {
+            let rotation = if reported_facing_matches(expected, view.rotation()) {
+                view.rotation()
+            } else {
+                separate_facing(view.rotation(), |rotation| {
+                    reported_facing_matches(expected, rotation)
+                })?
+            };
             // The block points out of the face it is placed against, so the click must land on
             // that neighbour's face. Report that click without turning the camera.
             if observed.target.face == face
                 && observed.target.position == placement_cell(expected.position, face ^ 1)
             {
-                return bridge.then(|| {
+                return (bridge || rotation != view.rotation()).then(|| {
                     PlacementAim::observed(
-                        view.rotation(),
+                        rotation,
                         (
                             observed.target.position,
                             observed.target.face,
@@ -237,24 +310,32 @@ pub(super) fn correction(
                 return None;
             }
             return Some(PlacementAim {
-                rotation: view.rotation(),
+                rotation,
                 support_ray: None,
                 interaction_ray: Vec3::from_array(candidate.target.hit_world) - eye,
                 hidden_height: Some(0.5),
                 support: (candidate.target.position, face, candidate.target.runtime_id),
             });
         }
-        let want = wanted_quadrant(expected)?;
+        let has_rotation = wanted_quadrant(expected).is_some()
+            || serde_json::from_str::<serde_json::Value>(&expected.states)
+                .ok()?
+                .get("ground_sign_direction")
+                .is_some();
+        if !has_rotation {
+            return None;
+        }
         let support = (
             observed.target.position,
             observed.target.face,
             observed.target.runtime_id,
         );
-        if look_quadrant(view.rotation()) == want {
+        if reported_facing_matches(expected, view.rotation()) {
             return bridge.then(|| PlacementAim::observed(view.rotation(), support, forward));
         }
-        let rotation =
-            separate_facing(view.rotation(), |rotation| look_quadrant(rotation) == want)?;
+        let rotation = separate_facing(view.rotation(), |rotation| {
+            reported_facing_matches(expected, rotation)
+        })?;
         return Some(PlacementAim::observed(rotation, support, forward));
     }
     let stair = planned.contains_key("weirdo_direction");
@@ -316,7 +397,7 @@ pub(super) fn correction(
                 && context
                     .collisions
                     .block_canonical_state(mode, placement.block)
-                    .is_some_and(|actual| matches_planned_state(&planned, actual))
+                    .is_some_and(|actual| strict_state_matches(expected, actual))
         })
     };
     let eye = Vec3::from_array(observed.ray.origin);
@@ -513,6 +594,38 @@ fn stable_stair_yaw(rotation: Quat) -> bool {
     (2.0..=88.0).contains(&offset)
 }
 
+/// Checks known item-use facing rules, including the sixteen-step sign/banner rotation.
+pub(super) fn reported_facing_matches(offer: &CreativePlacementOffer, rotation: Quat) -> bool {
+    if matches!(
+        offer.name.as_str(),
+        "minecraft:bell" | "minecraft:grindstone"
+    ) && serde_json::from_str::<serde_json::Value>(&offer.states).is_ok_and(|states| {
+        matches!(
+            states["attachment"]["value"].as_str(),
+            Some("side" | "multiple")
+        )
+    }) {
+        return true;
+    }
+    if let Ok(states) = serde_json::from_str::<serde_json::Value>(&offer.states)
+        && let Some(wanted) = states["ground_sign_direction"]["value"].as_u64()
+        && (!offer.name.ends_with("hanging_sign") || free_hanging_sign(offer))
+    {
+        let turn = ((wire_facing(rotation)[1] + 180.) / 22.5 + 0.5)
+            .floor()
+            .rem_euclid(16.) as u64;
+        return turn == wanted;
+    }
+    wanted_quadrant(offer).is_none_or(|wanted| look_quadrant(rotation) == wanted)
+}
+
+/// Sneaking selects the free sixteen-step hanging-sign attachment in stock Bedrock.
+pub(super) fn free_hanging_sign(offer: &CreativePlacementOffer) -> bool {
+    offer.name.ends_with("hanging_sign")
+        && serde_json::from_str::<serde_json::Value>(&offer.states)
+            .is_ok_and(|state| state["attached_bit"]["value"].as_u64() == Some(1))
+}
+
 /// Changes only horizontal facing while keeping the sampled click and pitch.
 fn separate_facing(rotation: Quat, mut matches: impl FnMut(Quat) -> bool) -> Option<Quat> {
     let (yaw, pitch, _) = rotation.to_euler(EulerRot::YXZ);
@@ -520,6 +633,13 @@ fn separate_facing(rotation: Quat, mut matches: impl FnMut(Quat) -> bool) -> Opt
     let cardinal = (yaw / quadrant).round() * quadrant;
     [0.0, quadrant, -quadrant, std::f32::consts::PI]
         .into_iter()
+        // Standing signs and banners have sixteen orientations. Try the four
+        // cheap cardinal cases first so ordinary blocks keep their usual path.
+        .chain(
+            (1..16)
+                .filter(|step| step % 4 != 0)
+                .map(|step| step as f32 * std::f32::consts::TAU / 16.0),
+        )
         .map(|offset| Quat::from_euler(EulerRot::YXZ, cardinal + offset, pitch, 0.0))
         .find(|&candidate| matches(candidate))
 }
@@ -551,9 +671,32 @@ pub(super) fn air_place_face(offer: &CreativePlacementOffer) -> Option<u8> {
     // DoorItem needs a solid floor. An air click cannot make a freestanding door.
     (!ceiling_lever(offer)
         && !horizontal_pillar
+        && !(offer.name == "minecraft:hopper" && wanted_face(offer) != Some(1))
+        && !matches!(
+            offer.name.as_str(),
+            "minecraft:conduit"
+                | "minecraft:flower_pot"
+                | "minecraft:cake"
+                | "minecraft:snow_layer"
+                | "minecraft:nether_sprouts"
+        )
         && !offer.name.ends_with("_door")
+        && offer.name != "minecraft:bed"
+        && (!(offer.name.ends_with("_head") || offer.name.ends_with("_skull"))
+            || planned_face(&planned) == Some(1))
+        && !offer.name.ends_with("_sign")
+        && !offer.name.ends_with("_banner")
         && planned_upper(&planned) != Some(true))
     .then_some(1)
+}
+
+/// SkullItem offsets an air click by its face; BlockItem places inside the clicked air cell.
+pub(super) fn air_click_position(offer: &CreativePlacementOffer) -> [i32; 3] {
+    if offer.name.ends_with("_head") || offer.name.ends_with("_skull") {
+        placement_cell(offer.position, 0)
+    } else {
+        offer.position
+    }
 }
 
 fn planned_upper(planned: &serde_json::Map<String, serde_json::Value>) -> Option<bool> {
@@ -587,7 +730,55 @@ fn matches_planned_state(
 }
 
 pub(super) fn strict_state_matches(offer: &CreativePlacementOffer, actual: &str) -> bool {
-    placement_properties(offer).is_some_and(|planned| matches_planned_state(&planned, actual))
+    placement_properties(offer).is_some_and(|mut planned| {
+        if let Some(key) = stack_property(&offer.name) {
+            let current: serde_json::Value = serde_json::from_str(actual).unwrap_or_default();
+            let counts = planned
+                .get(key)
+                .and_then(|value| value["value"].as_u64())
+                .zip(current[key]["value"].as_u64());
+            if let Some((want, have)) = counts {
+                if have > want {
+                    return false;
+                }
+                planned.remove(key);
+            }
+        }
+        matches_planned_state(&planned, actual)
+    })
+}
+
+fn stack_property(name: &str) -> Option<&'static str> {
+    match name {
+        "minecraft:snow_layer" => Some("height"),
+        "minecraft:sea_pickle" => Some("cluster_count"),
+        name if name == "minecraft:candle" || name.ends_with("_candle") => Some("candles"),
+        _ => None,
+    }
+}
+
+/// A normal item use adds one layer/item. Keep targeting the same stack until its planned count.
+pub(super) fn needs_stack(
+    offer: &CreativePlacementOffer,
+    name: Option<&str>,
+    states: Option<&str>,
+) -> bool {
+    if name != Some(offer.name.as_str()) {
+        return false;
+    }
+    let Some(key) = stack_property(&offer.name) else {
+        return false;
+    };
+    let Some((want, have)) = serde_json::from_str::<serde_json::Value>(&offer.states)
+        .ok()
+        .zip(states.and_then(|value| serde_json::from_str::<serde_json::Value>(value).ok()))
+    else {
+        return false;
+    };
+    want[key]["value"]
+        .as_u64()
+        .zip(have[key]["value"].as_u64())
+        .is_some_and(|(want, have)| have < want)
 }
 
 /// Only reconcile a wooden trapdoor whose placement state already matches.
@@ -646,6 +837,13 @@ fn placement_properties(
     let gate = offer.name.ends_with("fence_gate");
     let door = offer.name.ends_with("_door");
     let soil_plant = gameplay::placement_plants::supported(&offer.name);
+    if offer.name.ends_with("hanging_sign") {
+        if free_hanging_sign(offer) {
+            planned.remove("facing_direction");
+        } else {
+            planned.remove("ground_sign_direction");
+        }
+    }
     planned.retain(|key, _| {
         !(gameplay::placement_world_states::world_controlled_name(key)
             || (wall && (key == "wall_post_bit" || key.starts_with("wall_connection_type_")))
@@ -657,8 +855,7 @@ fn placement_properties(
             || (leaves && matches!(key.as_str(), "persistent_bit" | "update_bit"))
             || (redstone && key.starts_with("redstone_"))
             || (observer && key == "powered_bit")
-            // A hopper takes whatever facing the click gives it.
-            || (hopper && matches!(key.as_str(), "toggle_bit" | "facing_direction"))
+            || (hopper && key == "toggle_bit")
             || (dispenser && key == "triggered_bit")
             || (repeater && key == "repeater_delay")
             || (comparator && matches!(key.as_str(), "output_lit_bit" | "output_subtract_bit"))
@@ -955,6 +1152,56 @@ mod tests {
     }
 
     #[test]
+    fn stock_server_item_rotation_and_stack_progress() {
+        use serde_json::json;
+        for name in [
+            "minecraft:chiseled_bookshelf",
+            "minecraft:grindstone",
+            "minecraft:bell",
+            "minecraft:beehive",
+        ] {
+            for (q, direction) in [2, 3, 0, 1].into_iter().enumerate() {
+                assert_eq!(
+                    wanted_quadrant(&offer(
+                        name,
+                        json!({"direction":{"type":"int","value":direction}})
+                    )),
+                    Some(q)
+                );
+            }
+        }
+        for name in ["minecraft:standing_sign", "minecraft:standing_banner"] {
+            for wanted in 0..16 {
+                let planned = offer(
+                    name,
+                    json!({"ground_sign_direction":{"type":"int","value":wanted}}),
+                );
+                let facing = separate_facing(Quat::IDENTITY, |facing| {
+                    reported_facing_matches(&planned, facing)
+                })
+                .unwrap();
+                assert!(reported_facing_matches(&planned, facing));
+            }
+        }
+        let snow = offer(
+            "minecraft:snow_layer",
+            json!({"height":{"type":"int","value":5}}),
+        );
+        let short = json!({"height":{"type":"int","value":2}}).to_string();
+        let tall = json!({"height":{"type":"int","value":6}}).to_string();
+        assert!(needs_stack(&snow, Some(&snow.name), Some(&short)));
+        assert!(strict_state_matches(&snow, &short));
+        assert!(!strict_state_matches(&snow, &tall));
+        assert!(!needs_stack(&snow, Some("minecraft:stone"), Some(&short)));
+        let skull = offer(
+            "minecraft:skeleton_skull",
+            json!({"facing_direction":{"type":"int","value":1}}),
+        );
+        assert_eq!(air_click_position(&skull), [0, -1, 0]);
+        assert_eq!(air_place_face(&skull), Some(1));
+    }
+
+    #[test]
     fn unpredicted_blocks_get_the_click_face_or_look_quadrant_their_planned_state_needs() {
         let rod = offer(
             "minecraft:end_rod",
@@ -1007,7 +1254,6 @@ mod tests {
             "minecraft:carved_pumpkin",
             "minecraft:stonecutter_block",
             "minecraft:lectern",
-            "minecraft:campfire",
         ] {
             for (quadrant, direction) in ["north", "east", "south", "west"].iter().enumerate() {
                 assert_eq!(
@@ -1018,7 +1264,11 @@ mod tests {
             }
         }
         // Anvils face a quarter turn left of the player, as `anvil_states` places them.
-        for name in ["minecraft:anvil", "minecraft:chipped_anvil", "minecraft:damaged_anvil"] {
+        for name in [
+            "minecraft:anvil",
+            "minecraft:chipped_anvil",
+            "minecraft:damaged_anvil",
+        ] {
             for (quadrant, direction) in ["east", "south", "west", "north"].iter().enumerate() {
                 assert_eq!(
                     wanted_quadrant(&cardinal(name, direction)),

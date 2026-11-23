@@ -27,7 +27,12 @@ pub(super) fn preview(
     let mode = stream.network_id_mode();
     // Targets are chosen for the offer as the mod made it; the build uses its full block.
     let raw = offer.clone();
-    let offer = super::creative::full_block_offer(&context.collisions, stream, offer);
+    let offer = super::creative::full_block_offer(
+        &context.collisions,
+        stream,
+        offer,
+        player.facts.player_game_mode() == Some(PlayerGameMode::Survival),
+    );
     let mut prediction = PlacementPrediction {
         ghost: offer.position,
         block: offer.name.clone(),
@@ -105,14 +110,21 @@ pub(super) fn preview(
     let use_air = offer.strict_state
         && bridge
         && target.target.runtime_id == stream.air_block_id()
-        && target.target.position == offer.position;
-    let replacing_plant = gameplay::placement_plants::supported(&offer.name)
-        && target.target.position == offer.position
-        && gameplay::placement_plants::replaceable(
+        && target.target.position == super::orientation::air_click_position(&offer);
+    let replacing_plant = target.target.position == offer.position
+        && (gameplay::placement_items::replaceable_destination(
             context
                 .collisions
                 .block_facts(mode, target.target.runtime_id),
-        );
+        ) || super::orientation::needs_stack(
+            &offer,
+            context
+                .collisions
+                .block_identifier(mode, target.target.runtime_id),
+            context
+                .collisions
+                .block_canonical_state(mode, target.target.runtime_id),
+        ));
     if target.target.face > 5
         || (!use_air
             && !replacing_plant
@@ -202,16 +214,17 @@ pub(super) fn preview(
             prediction.face = Some(observed.target.face);
         }
     }
-    let use_air = observed.target.position == offer.position
+    let use_air = observed.target.position == super::orientation::air_click_position(&offer)
         && observed.target.runtime_id == stream.air_block_id();
     prediction.air_click = offer.strict_state && use_air;
     let mut state = state;
-    if !use_air
+    if ((!use_air
         && context
             .collisions
             .block_facts(mode, observed.target.runtime_id)
             .traits
-            .contains(assets::registry::BlockTraits::INTERACTIVE)
+            .contains(assets::registry::BlockTraits::INTERACTIVE))
+        || super::orientation::free_hanging_sign(&offer))
         && !state.sneaking
     {
         prediction.sneak = true;

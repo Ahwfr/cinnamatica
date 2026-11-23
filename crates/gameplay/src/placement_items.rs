@@ -1,12 +1,35 @@
 //! Which item builds a planned block, derived from registry names, the item route table and
 //! the installed pack's block visuals rather than per-block lists.
 
-use assets::{
-    BlockFace, NetworkIdMode, RuntimeAssets, VisualKind,
-    facts::{BlockRenderKind, PlacementRule},
-};
+use assets::{BlockFace, NetworkIdMode, RuntimeAssets, VisualKind, facts::PlacementRule};
 
 use crate::movement::PhysicsCollisionRegistries;
+
+/// Whether a loaded destination can be replaced rather than treated as a solid obstruction.
+pub fn replaceable_destination(fact: assets::facts::BlockFact) -> bool {
+    use assets::registry::BlockTraits as T;
+    fact.readable && fact.traits.intersects(T::AIR | T::REPLACEABLE | T::WATER)
+}
+
+/// Exact identities whose facing is resolved by the native per-type predictor even when
+/// their generated placement family is unresolved.
+pub fn predicts_named_orientation(name: &str) -> bool {
+    matches!(
+        name,
+        "minecraft:observer"
+            | "minecraft:dropper"
+            | "minecraft:barrel"
+            | "minecraft:chest"
+            | "minecraft:trapped_chest"
+            | "minecraft:ender_chest"
+            | "minecraft:calibrated_sculk_sensor"
+            | "minecraft:campfire"
+            | "minecraft:soul_campfire"
+            | "minecraft:chiseled_bookshelf"
+            | "minecraft:beehive"
+            | "minecraft:bee_nest"
+    )
+}
 
 /// The floor-standing block a wall-mounted `name` shares its item with, such as
 /// `minecraft:wall_banner` to `minecraft:standing_banner` or `minecraft:tube_coral_wall_fan`
@@ -16,6 +39,15 @@ pub fn standing_form(
     mode: NetworkIdMode,
     name: &str,
 ) -> Option<String> {
+    // Berry-bearing cave vines use the same glow-berry item as their plain placement form.
+    if matches!(
+        name,
+        "minecraft:cave_vines_body_with_berries" | "minecraft:cave_vines_head_with_berries"
+    ) {
+        return collisions
+            .block_default_runtime_id(mode, "minecraft:cave_vines")
+            .map(|_| "minecraft:cave_vines".to_owned());
+    }
     if !name.contains("wall_") {
         return None;
     }
@@ -50,8 +82,8 @@ pub fn wall_form(
 }
 
 /// The block a stack of `identifier` places when the stack names no block runtime ID: the
-/// route table's block (the same-named one for items such as hoppers), or the same-named block for block-entity-drawn blocks such as heads
-/// and hanging signs, whose items carry no block.
+/// route table's block, or a registered same-named block. Missing item block runtime IDs
+/// occur for ordinary terrain blocks too, not just block-entity-rendered blocks.
 pub fn routed_item_block(
     collisions: &PhysicsCollisionRegistries,
     mode: NetworkIdMode,
@@ -62,9 +94,7 @@ pub fn routed_item_block(
     {
         return Some(block);
     }
-    let block = collisions.block_default_runtime_id(mode, identifier)?;
-    (collisions.block_facts(mode, block).render.kind == BlockRenderKind::EntityDrawn)
-        .then_some(block)
+    collisions.block_default_runtime_id(mode, identifier)
 }
 
 /// The full block drawn exactly like the double slab `double_slab`, such as dark oak planks for

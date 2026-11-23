@@ -1,4 +1,4 @@
-//! Real chest and shulker models for the blocks of a mod's retained block grids.
+//! Native block-entity models for a mod's retained block grids.
 //!
 //! The Schematica hologram is a retained block grid meshed by the terrain pipeline, which has
 //! no geometry for block-entity blocks. Its mesh leaves chests and shulker boxes out
@@ -13,6 +13,8 @@ use mod_render::retained::{
     blocks::{BlockGeometry, BlockGrid, BlockState, entity_overlaid},
 };
 use render_model::{ChestModel, ChestPair, ChestVariant, Facing, ShulkerModel};
+#[path = "hologram_models.rs"]
+mod models;
 
 /// Pieces farther than this from the eye are not submitted.
 const RADIUS_BLOCKS: f32 = 64.0;
@@ -25,6 +27,19 @@ const MAX_PIECES_PER_GRID: usize = 50_000;
 pub(super) enum Piece {
     Chest(ChestModel),
     Shulker(ShulkerModel),
+    Bed(render_model::BedModel),
+    Banner { wall: Option<Facing>, rotation: f32 },
+    Skull(render_model::SkullModel),
+    Pot(Facing),
+    Conduit,
+    Bell(render_model::BellAttachment),
+}
+
+/// A cached model with the drawing instance's current appearance, sampled every frame.
+pub(super) struct DrawPiece {
+    pub at: [i32; 3],
+    pub piece: Piece,
+    pub tint: [f32; 3],
 }
 
 struct Cached {
@@ -49,7 +64,7 @@ impl HologramPieces {
         dimension: i32,
         eye: Vec3,
         occupied: impl Fn([i32; 3]) -> bool,
-        out: &mut Vec<([i32; 3], Piece)>,
+        out: &mut Vec<DrawPiece>,
     ) {
         let mut next = Vec::with_capacity(self.cache.len());
         for resources in retained {
@@ -61,7 +76,9 @@ impl HologramPieces {
                 else {
                     continue;
                 };
-                if anchored != dimension || instance.tint[3] <= 0. || !is_identity(&instance.transform)
+                if anchored != dimension
+                    || instance.tint[3] <= 0.
+                    || !is_identity(&instance.transform)
                 {
                     continue;
                 }
@@ -76,7 +93,9 @@ impl HologramPieces {
                     .cache
                     .iter()
                     .chain(&next)
-                    .find(|cached| Arc::ptr_eq(&cached.geometry, blocks) && cached.origin == position)
+                    .find(|cached| {
+                        Arc::ptr_eq(&cached.geometry, blocks) && cached.origin == position
+                    })
                     .map_or_else(
                         || Arc::<[_]>::from(scan(&blocks.grid, position)),
                         |cached| Arc::clone(&cached.pieces),
@@ -85,14 +104,29 @@ impl HologramPieces {
                     if out.len() >= MAX_PIECES {
                         break;
                     }
-                    let center = Vec3::new(at[0] as f32 + 0.5, at[1] as f32 + 0.5, at[2] as f32 + 0.5);
+                    let center =
+                        Vec3::new(at[0] as f32 + 0.5, at[1] as f32 + 0.5, at[2] as f32 + 0.5);
                     // The hologram takes a while to regenerate after a block lands, so the
                     // client's own world decides at once: a cell that holds a block has its
                     // ghost model dropped without waiting for the hologram.
                     if center.distance_squared(eye) <= RADIUS_BLOCKS * RADIUS_BLOCKS
                         && !occupied(at)
                     {
-                        out.push((at, piece));
+                        use mod_api::drawing::{
+                            BLOCK_GRID_WASH_COLOR_PARAM, BLOCK_GRID_WASH_PARAM,
+                        };
+                        let wash = instance.params[BLOCK_GRID_WASH_PARAM].clamp(0., 1.);
+                        out.push(DrawPiece {
+                            at,
+                            piece,
+                            tint: std::array::from_fn(|channel| {
+                                instance.tint[channel]
+                                    * (1. - wash
+                                        + wash
+                                            * instance.params
+                                                [BLOCK_GRID_WASH_COLOR_PARAM + channel])
+                            }),
+                        });
                     }
                 }
                 next.push(Cached {
@@ -164,6 +198,9 @@ fn piece_for(state: &BlockState) -> Option<Piece> {
     if !entity_overlaid(name) {
         return None;
     }
+    if let Some(piece) = models::piece(name, states) {
+        return Some(piece);
+    }
     let short = name.strip_prefix("minecraft:").unwrap_or(name);
     if short.ends_with("shulker_box") {
         return Some(Piece::Shulker(ShulkerModel {
@@ -230,7 +267,9 @@ fn pair_chests(found: &mut [([i32; 3], Piece)]) {
         let Piece::Chest(next) = found[other].1 else {
             continue;
         };
-        if next.variant != model.variant || next.facing != model.facing || next.pair != ChestPair::Single
+        if next.variant != model.variant
+            || next.facing != model.facing
+            || next.pair != ChestPair::Single
         {
             continue;
         }
@@ -258,10 +297,29 @@ mod tests {
         })
     }
 
+    #[test]
+    fn entity_ghosts_use_native_models_instead_of_terrain_standins() {
+        for name in [
+            "minecraft:bed",
+            "minecraft:standing_banner",
+            "minecraft:skeleton_skull",
+            "minecraft:creeper_head",
+            "minecraft:decorated_pot",
+            "minecraft:conduit",
+            "minecraft:bell",
+        ] {
+            let state = BlockState::Named {
+                name: name.into(),
+                states: r#"{"direction":{"type":"int","value":0}}"#.into(),
+            };
+            assert!(piece_for(&state).is_some(), "{name}");
+        }
+    }
+
     fn pair_of(found: &[([i32; 3], Piece)], slot: usize) -> ChestPair {
         match found[slot].1 {
             Piece::Chest(model) => model.pair,
-            Piece::Shulker(_) => ChestPair::Single,
+            _ => ChestPair::Single,
         }
     }
 
@@ -292,9 +350,19 @@ mod tests {
             ([8, 70, 3], chest(Facing::East)),
         ];
         pair_chests(&mut found);
-        assert_eq!(pair_of(&found, 0), ChestPair::Lead { partner: [5, 70, 9] });
+        assert_eq!(
+            pair_of(&found, 0),
+            ChestPair::Lead {
+                partner: [5, 70, 9]
+            }
+        );
         assert_eq!(pair_of(&found, 1), ChestPair::Follower);
-        assert_eq!(pair_of(&found, 2), ChestPair::Lead { partner: [8, 70, 3] });
+        assert_eq!(
+            pair_of(&found, 2),
+            ChestPair::Lead {
+                partner: [8, 70, 3]
+            }
+        );
         assert_eq!(pair_of(&found, 3), ChestPair::Follower);
     }
 
@@ -325,7 +393,12 @@ mod tests {
             ([2, 70, 0], chest(Facing::North)),
         ];
         pair_chests(&mut found);
-        assert_eq!(pair_of(&found, 0), ChestPair::Lead { partner: [1, 70, 0] });
+        assert_eq!(
+            pair_of(&found, 0),
+            ChestPair::Lead {
+                partner: [1, 70, 0]
+            }
+        );
         assert_eq!(pair_of(&found, 1), ChestPair::Follower);
         assert_eq!(pair_of(&found, 2), ChestPair::Single);
     }
@@ -346,10 +419,19 @@ mod tests {
 
     #[test]
     fn only_air_and_liquids_leave_a_cell_open_for_a_ghost() {
-        for name in ["minecraft:air", "minecraft:water", "minecraft:flowing_lava", "cave_air"] {
+        for name in [
+            "minecraft:air",
+            "minecraft:water",
+            "minecraft:flowing_lava",
+            "cave_air",
+        ] {
             assert!(is_open_cell(name), "{name}");
         }
-        for name in ["minecraft:chest", "minecraft:stone", "minecraft:powder_snow"] {
+        for name in [
+            "minecraft:chest",
+            "minecraft:stone",
+            "minecraft:powder_snow",
+        ] {
             assert!(!is_open_cell(name), "{name}");
         }
     }
