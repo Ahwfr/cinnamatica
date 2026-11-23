@@ -3,12 +3,14 @@ use crate::{BlockState, Schematic, StateValue};
 pub const MAX_EDGE: i32 = 128;
 pub const MAX_CELLS: usize = 400_000;
 const MAX_PALETTE: usize = 1024;
-const PALETTE_BYTES: usize = 32 * 1024;
 pub const SLOT_MARKER: &[u8] = b"schematica:embedded-library:v4\x00";
-const PAYLOAD_BYTES: usize = 2 * MAX_CELLS + PALETTE_BYTES;
 pub const MAX_LIBRARY: usize = 8;
-// Keep the component slot and aggregate memory budget compatible with existing libraries.
-const LIBRARY_BYTES: usize = 13 + MAX_LIBRARY * (4 + 200_000 + PALETTE_BYTES);
+// Preserve the existing fixed WASM slot and old imported libraries. The 32 KiB term
+// describes the original slot allocation, not a limit on any decoded palette.
+const LIBRARY_BYTES: usize = 13 + MAX_LIBRARY * (4 + 200_000 + 32 * 1024);
+// One SCL2 header and entry length precede a single entry. Palette and cell data
+// share the available capacity instead of imposing a separate palette-byte cap.
+const PAYLOAD_BYTES: usize = LIBRARY_BYTES - 13 - 4;
 pub const SLOT_BYTES: usize = SLOT_MARKER.len() + 4 + LIBRARY_BYTES;
 
 pub const fn empty_slot() -> [u8; SLOT_BYTES] {
@@ -61,6 +63,9 @@ pub fn library_revision(bytes: &[u8]) -> u64 {
 }
 
 pub fn library(mut bytes: &[u8]) -> Result<Vec<&[u8]>, String> {
+    if bytes.len() > LIBRARY_BYTES {
+        return Err("encoded schematic library exceeds its storage capacity".into());
+    }
     if bytes.is_empty() {
         return Ok(Vec::new());
     }
@@ -134,7 +139,7 @@ pub fn validate_size(size: [i32; 3]) -> Result<usize, String> {
 
 pub fn encode(schematic: &Schematic) -> Result<Vec<u8>, String> {
     let [sx, sy, sz] = schematic.size();
-    validate_size([sx, sy, sz])?;
+    let cells = validate_size([sx, sy, sz])?;
     if schematic.palette().len() > MAX_PALETTE {
         return Err(format!(
             "palette exceeds {MAX_PALETTE} distinct block states"
@@ -163,8 +168,13 @@ pub fn encode(schematic: &Schematic) -> Result<Vec<u8>, String> {
             }
         }
     }
-    if out.len() > PALETTE_BYTES {
-        return Err("encoded palette exceeds 32 KiB".into());
+    let encoded_bytes = out.len() + 2 * cells;
+    if encoded_bytes > PAYLOAD_BYTES {
+        return Err(format!(
+            "decoded schematic needs {encoded_bytes} bytes ({} bytes of block states); \
+             library-entry capacity is {PAYLOAD_BYTES} bytes. Compressed file size is different",
+            out.len()
+        ));
     }
     for y in 0..sy {
         for z in 0..sz {
@@ -204,6 +214,9 @@ pub struct Decoder<'a> {
 
 impl<'a> Decoder<'a> {
     pub fn new(mut bytes: &'a [u8]) -> Result<Self, String> {
+        if bytes.len() > PAYLOAD_BYTES {
+            return Err("decoded schematic exceeds the library-entry capacity".into());
+        }
         let wide = match take(&mut bytes, 4)? {
             b"SCB1" => false,
             b"SCB2" => true,
@@ -220,9 +233,7 @@ impl<'a> Decoder<'a> {
         } else {
             byte(&mut bytes)? as usize
         };
-        if !(1..=MAX_PALETTE).contains(&count)
-            || bytes.len() > volume * (if wide { 2 } else { 1 }) + PALETTE_BYTES
-        {
+        if !(1..=MAX_PALETTE).contains(&count) {
             return Err("invalid palette size".into());
         }
         let name = string(&mut bytes)?;
@@ -333,5 +344,53 @@ mod tests {
         assert_eq!(restored.palette().len(), 301);
         assert_eq!(restored.palette_index([17, 0, 6]), Some(300));
         assert!(decode(&bytes[..bytes.len() - 1]).is_err());
+    }
+
+    #[test]
+    fn large_decoded_palette_round_trips_through_the_existing_library_slot() {
+        let mut schematic = Schematic::new("many states", [100, 1, 5]);
+        for index in 0..500 {
+            schematic.set(
+                [index % 100, 0, index / 100],
+                BlockState::new("minecraft:test")
+                    .with("variant", StateValue::Int(index))
+                    .with(
+                        "description",
+                        StateValue::Str("repeated state data ".repeat(8)),
+                    ),
+            );
+        }
+        let payload = encode(&schematic).unwrap();
+        assert!(payload.len() - 2 * 500 > 32 * 1024);
+        let encoded = encode_library_revision(&[payload.clone()], 61).unwrap();
+        let slot = embedded_slot(&encoded).unwrap();
+        assert_eq!(slot.len(), SLOT_BYTES);
+        let entries = library(embedded_payload(&slot).unwrap()).unwrap();
+        let restored = decode(entries[0]).unwrap();
+        assert_eq!(restored.palette(), schematic.palette());
+        assert_eq!(
+            restored.layer_cells(crate::LayerMode::All),
+            schematic.layer_cells(crate::LayerMode::All)
+        );
+    }
+
+    #[test]
+    fn palette_and_cells_share_the_total_entry_capacity() {
+        let mut schematic = Schematic::new("too many state bytes", [64, 1, 1]);
+        for index in 0..64 {
+            let mut state = BlockState::new(format!("minecraft:test_{index}"));
+            for property in 0..128 {
+                state = state.with(
+                    &format!("property_{property}"),
+                    StateValue::Str("x".repeat(240)),
+                );
+            }
+            schematic.set([index, 0, 0], state);
+        }
+        assert!(encode(&schematic)
+            .unwrap_err()
+            .contains("library-entry capacity"));
+        assert!(Decoder::new(&vec![0; PAYLOAD_BYTES + 1]).is_err());
+        assert!(library(&vec![0; LIBRARY_BYTES + 1]).is_err());
     }
 }

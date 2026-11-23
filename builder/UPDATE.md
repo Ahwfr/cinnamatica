@@ -1,5 +1,18 @@
 # Installing and updating Builder
 
+0.3.62 fixes large-palette guest fuel exhaustion during container highlight and
+Materials preparation. This is a guest-only behavior change; it reuses the current
+native client and preserves library payloads and profile settings. The importer
+and build stamps advance together. No installer is published by this local update.
+
+0.3.61 fixes imports whose decoded block-state palette exceeds 32 KiB, even when the
+compressed source file is smaller. It changes the importer and guest decoder, not
+the native client API. Both are updated together; old library payloads and the
+fixed embedded slot remain compatible. Input and gzip-decoded data may be up to
+64 MiB. The eight-entry library still shares about 1.78 MiB of encoded storage;
+dimensions, cell counts and distinct-state limits remain unchanged. Larger source
+files are not a promise that arbitrary-volume Litematica schematics will fit.
+
 0.3.60 changes only the mod. It is untested in the game.
 
 0.3.59 changes only the mod. It is untested in the game.
