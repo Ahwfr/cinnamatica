@@ -119,7 +119,10 @@ impl Viewer {
             progress: "Starting".into(),
         });
         let _ = crate::panel::close();
-        self.paste_notice = Some(("Exporting | You can keep building while it uploads".into(), 5.0));
+        self.paste_notice = Some((
+            "Exporting | You can keep building while it uploads".into(),
+            5.0,
+        ));
     }
 
     /// Sends the next piece of the export, if one is under way. Runs every frame beside the
@@ -278,9 +281,16 @@ pub(crate) fn structure_name(schematic_name: &str) -> String {
     let stem = schematic_name
         .rsplit_once('.')
         .filter(|(_, extension)| {
-            ["mcstructure", "nbt", "litematic", "schem", "schematic", "gz"]
-                .iter()
-                .any(|known| extension.eq_ignore_ascii_case(known))
+            [
+                "mcstructure",
+                "nbt",
+                "litematic",
+                "schem",
+                "schematic",
+                "gz",
+            ]
+            .iter()
+            .any(|known| extension.eq_ignore_ascii_case(known))
         })
         .map_or(schematic_name, |(stem, _)| stem);
     let mut name = String::new();
@@ -295,7 +305,11 @@ pub(crate) fn structure_name(schematic_name: &str) -> String {
     let name = name.trim_end_matches('_');
     let name: String = name.chars().take(24).collect();
     let name = name.trim_end_matches('_');
-    if name.is_empty() { "schematic".into() } else { name.into() }
+    if name.is_empty() {
+        "schematic".into()
+    } else {
+        name.into()
+    }
 }
 
 /// Structure blocks load at most 64 blocks along x and z, and 384 up. A larger schematic is
@@ -344,8 +358,9 @@ fn export_message(names: &[String]) -> String {
             "Exported | In chat type /structure load {only} ~ ~ ~ or in a structure block choose Load and type {only}"
         ),
         [first, .., last] => format!(
-            "Exported {} parts | Load {first} to {last}, each {PART_EDGE} wide, the number counts east then south"
-        , names.len()),
+            "Exported {} parts | Load {first} to {last}, each {PART_EDGE} wide, the number counts east then south",
+            names.len()
+        ),
         [] => "Exported nothing".into(),
     }
 }
@@ -395,7 +410,8 @@ pub(crate) fn command(
 }
 
 pub(super) fn placement_property(name: &str) -> bool {
-    !name.starts_with("minecraft:connection_")
+    name != schematica_core::state::DISPLAY_COLOR_STATE
+        && !name.starts_with("minecraft:connection_")
         && name != "minecraft:corner"
         && !name.starts_with("wall_connection_type_")
         && name != "wall_post_bit"
@@ -459,7 +475,10 @@ mod tests {
         assert_eq!(structure_name(""), "schematic");
         let long = structure_name("a_very_long_schematic_name_that_goes_on_and_on.nbt");
         assert!(long.len() <= 24 && !long.ends_with('_'), "{long}");
-        assert!(long.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_'));
+        assert!(
+            long.bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+        );
     }
 
     #[test]
@@ -482,15 +501,24 @@ mod tests {
             .sum();
         assert_eq!(volume, 130 * 50 * 64);
         let tall = export_parts([0, -64, 0], [10, 400, 10], "tower");
-        assert_eq!(tall.iter().map(|part| part.0.as_str()).collect::<Vec<_>>(), ["tower_0_0_0", "tower_0_1_0"]);
+        assert_eq!(
+            tall.iter().map(|part| part.0.as_str()).collect::<Vec<_>>(),
+            ["tower_0_0_0", "tower_0_1_0"]
+        );
         assert!(tall.iter().all(|(_, lo, hi)| hi[1] - lo[1] <= 384));
     }
 
     #[test]
     fn the_export_message_names_what_to_load() {
         let one = export_message(&["hut".into()]);
-        assert!(one.contains("type hut") && one.contains("/structure load hut ~ ~ ~"), "{one}");
+        assert!(
+            one.contains("type hut") && one.contains("/structure load hut ~ ~ ~"),
+            "{one}"
+        );
         let many = export_message(&["w_0_0".into(), "w_1_0".into()]);
-        assert!(many.contains("2 parts") && many.contains("w_0_0") && many.contains("w_1_0"), "{many}");
+        assert!(
+            many.contains("2 parts") && many.contains("w_0_0") && many.contains("w_1_0"),
+            "{many}"
+        );
     }
 }

@@ -223,9 +223,14 @@ pub(crate) fn support_acceptance(
         };
     }
     if fact.placement == R::Snow {
-        return if support.support == SupportKind::Stone
+        return if matches!(
+            support.support,
+            SupportKind::SnowBlocked | SupportKind::PowderSnow
+        ) {
+            Some(false)
+        } else if (full_cube && support.support != SupportKind::Unresolved)
+            || support.support == SupportKind::Stone
             || support.support == SupportKind::Leaves
-            || (support.support == SupportKind::SnowLayer && full_cube)
         {
             Some(true)
         } else if matches!(

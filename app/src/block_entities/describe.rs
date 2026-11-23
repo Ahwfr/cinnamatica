@@ -143,6 +143,7 @@ fn facing(state: &BlockState) -> Option<Facing> {
                 .int("facing_direction")
                 .and_then(Facing::from_facing_direction)
         })
+        .or_else(|| state.int("direction").and_then(Facing::from_direction))
 }
 
 /// Sixteen-step ground rotation in degrees, 0 facing south.

@@ -1005,8 +1005,8 @@ impl Viewer {
                 .into_iter()
                 .flatten()
                 .find_map(|cell| self.tiles.iter().position(|tile| tile.contains(cell)));
-            let hot_tile = hot_cell
-                .and_then(|cell| self.tiles.iter().position(|tile| tile.contains(cell)));
+            let hot_tile =
+                hot_cell.and_then(|cell| self.tiles.iter().position(|tile| tile.contains(cell)));
             self.scan_priority = !self.scan_priority;
             // The tile of a fresh change takes every other frame until it has been checked
             // again, and the lap round the guide takes the rest. Giving it every frame starved
@@ -1330,12 +1330,27 @@ impl Viewer {
     fn placement_block(&self, pos: [i32; 3]) -> Option<(&schematica_core::BlockState, [i32; 3])> {
         use schematica_core::StateValue;
         let block = self.planned_block(pos)?;
-        // A bed's head is placed by its foot; the head cell offers nothing.
+        // A bed's head is placed by its foot. Resolve in schematic space so rotations
+        // and mirrors move both halves together, just as an upper door targets its lower half.
         if matches!(
             block.states.get("head_piece_bit"),
             Some(StateValue::Bool(true) | StateValue::Byte(1) | StateValue::Int(1))
         ) {
-            return None;
+            let direction = match block.states.get("direction")? {
+                StateValue::Int(value) => usize::try_from(*value).ok()?,
+                _ => return None,
+            };
+            let offset = *[[0, 0, 1], [-1, 0, 0], [0, 0, -1], [1, 0, 0]].get(direction)?;
+            let placement = self.placement?;
+            let local = placement.world_to_local(self.schematic.size(), pos)?;
+            let foot = std::array::from_fn(|axis| local[axis] - offset[axis]);
+            let base = self.schematic.get(foot)?;
+            return (base.name == block.name
+                && matches!(
+                    base.states.get("head_piece_bit"),
+                    Some(StateValue::Bool(false) | StateValue::Byte(0) | StateValue::Int(0))
+                ))
+            .then(|| (base, placement.local_to_world(self.schematic.size(), foot)));
         }
         if !matches!(
             block.states.get("upper_block_bit"),
@@ -1396,8 +1411,10 @@ impl Viewer {
             && match self.tiles.iter().find_map(|tile| tile.status_at(pos)) {
                 None | Some(CellStatus::Missing | CellStatus::Unloaded) => true,
                 Some(CellStatus::WrongState) => self.planned_block(pos).is_some_and(|block| {
-                    matches!(block.name.as_str(), "minecraft:snow_layer" | "minecraft:sea_pickle" | "minecraft:candle")
-                        || block.name.ends_with("_candle")
+                    matches!(
+                        block.name.as_str(),
+                        "minecraft:snow_layer" | "minecraft:sea_pickle" | "minecraft:candle"
+                    ) || block.name.ends_with("_candle")
                 }),
                 _ => false,
             }
@@ -1587,10 +1604,7 @@ impl Viewer {
             let index = pending.cursor;
             pending.cursor += 1;
             let block = &self.schematic.palette()[index];
-            if pending.needed[index] > 0
-                && !block.is_air()
-                && !block.is_placement_artifact()
-            {
+            if pending.needed[index] > 0 && !block.is_air() && !block.is_placement_artifact() {
                 if let Err(offset) = pending.seen.binary_search_by(|&previous| {
                     self.schematic.palette()[previous].name.cmp(&block.name)
                 }) {

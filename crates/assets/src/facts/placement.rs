@@ -74,6 +74,7 @@ named_facts!(
         Air,
         Fire,
         SnowLayer,
+        SnowBlocked,
         Vanilla
     }
 );
@@ -89,6 +90,7 @@ impl SupportKind {
             "minecraft:lava" | "minecraft:flowing_lava" => Self::Lava,
             "minecraft:fire" | "minecraft:soul_fire" => Self::Fire,
             "minecraft:snow_layer" => Self::SnowLayer,
+            "minecraft:ice" | "minecraft:frosted_ice" | "minecraft:barrier" => Self::SnowBlocked,
             "minecraft:leaves" | "minecraft:leaves2" => Self::Leaves,
             name if name.ends_with("_leaves") => Self::Leaves,
             name if name.starts_with("minecraft:") => Self::Vanilla,

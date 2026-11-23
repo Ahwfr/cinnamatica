@@ -181,9 +181,17 @@ pub(super) fn bridge_target(
             for face in 0..6 {
                 let support = placement_cell(offer.position, face ^ 1);
                 if prefer_air
-                    || (offer.name.ends_with("_door") && face != 1)
+                    || ((offer.name.ends_with("_door") || offer.name == "minecraft:bed")
+                        && face != 1)
                     || !super::orientation::support_produces_axis(offer, face)
-                    || world.is_air(support).unwrap_or(true)
+                    || !world.primary_runtime_id(support).is_ok_and(|block| {
+                        gameplay::placement_items::placement_anchor(
+                            context
+                                .collisions
+                                .block_facts(stream.network_id_mode(), block),
+                            &offer.name,
+                        )
+                    })
                 {
                     continue;
                 }

@@ -1,6 +1,22 @@
 use super::*;
 
 #[test]
+fn dragon_outline_encloses_native_model_instead_of_a_small_skull() {
+    use schematica_core::{BlockState, StateValue};
+    for side in 2..=5 {
+        let block = BlockState::new("minecraft:dragon_head")
+            .with("facing_direction", StateValue::Int(side));
+        let b = shapes::outline(&block).unwrap();
+        assert!((b[3] - b[0]).max(b[5] - b[2]) > 1.4);
+        assert_eq!(b[1], 0.25);
+        assert_eq!(b[4], 1.1875);
+    }
+    let b = shapes::outline(&BlockState::new("minecraft:dragon_head")).unwrap();
+    assert_eq!(b[1], 0.);
+    assert_eq!(b[4], 0.9375);
+}
+
+#[test]
 fn replacement_targeting_only_offers_wrong_plant_cells() {
     use schematica_core::{BlockState, CellStatus};
     let mut viewer = reference_viewer();
@@ -98,7 +114,9 @@ fn aim_passes_through_the_empty_part_of_a_thin_ghost_to_the_one_behind() {
         BlockState::new("minecraft:stone_block_slab")
             .with("minecraft:vertical_half", StateValue::Str("bottom".into())),
     );
-    viewer.schematic.set([0, 0, 0], BlockState::new("minecraft:stone"));
+    viewer
+        .schematic
+        .set([0, 0, 0], BlockState::new("minecraft:stone"));
     // Looking over the low slab reaches the block behind it; looking at the slab picks it.
     viewer.pose = Some(look_from(0.8));
     assert_eq!(viewer.aimed_next_ghost(None), Some([0, 0, 0]));
@@ -300,21 +318,44 @@ fn numpad_nudges_follow_the_nearest_camera_heading() {
 }
 
 #[test]
-fn a_bed_head_offers_nothing_while_its_foot_does() {
+fn a_bed_head_targets_its_foot_for_every_rotation_and_mirror() {
     use schematica_core::{BlockState, StateValue};
     let mut viewer = reference_viewer();
-    viewer.schematic = Schematic::new("Bed", [2, 1, 1]);
-    viewer.placement = Some(Placement::new([0; 3]));
-    let bed = BlockState::new("minecraft:bed");
-    viewer.schematic.set(
-        [0, 0, 0],
-        bed.clone().with("head_piece_bit", StateValue::Byte(0)),
-    );
-    viewer
-        .schematic
-        .set([1, 0, 0], bed.with("head_piece_bit", StateValue::Byte(1)));
-    assert!(viewer.placement_block([0, 0, 0]).is_some());
-    assert!(viewer.placement_block([1, 0, 0]).is_none());
+    for (direction, step) in [[0, 0, 1], [-1, 0, 0], [0, 0, -1], [1, 0, 0]]
+        .into_iter()
+        .enumerate()
+    {
+        viewer.schematic = Schematic::new("Bed", [3, 1, 3]);
+        let foot = [1, 0, 1];
+        let head = std::array::from_fn(|axis| foot[axis] + step[axis]);
+        let bed =
+            BlockState::new("minecraft:bed").with("direction", StateValue::Int(direction as i32));
+        viewer.schematic.set(
+            foot,
+            bed.clone().with("head_piece_bit", StateValue::Byte(0)),
+        );
+        viewer
+            .schematic
+            .set(head, bed.with("head_piece_bit", StateValue::Byte(1)));
+        for quarter_turns in 0..4 {
+            for mirror in [Mirror::None, Mirror::X, Mirror::Z] {
+                let placement = Placement {
+                    origin: [10, 64, 20],
+                    quarter_turns,
+                    mirror,
+                };
+                viewer.placement = Some(placement);
+                let (base, cell) = viewer
+                    .placement_block(placement.local_to_world(viewer.schematic.size(), head))
+                    .unwrap();
+                assert_eq!(
+                    cell,
+                    placement.local_to_world(viewer.schematic.size(), foot)
+                );
+                assert_eq!(base.states["head_piece_bit"], StateValue::Byte(0));
+            }
+        }
+    }
 }
 
 #[test]
@@ -356,7 +397,10 @@ fn material_page_counts_finish_over_multiple_frames() {
         let mut bindings = serde_json::Map::new();
         browser::bindings(&viewer, &mut bindings, &mut Vec::new());
         assert_eq!(viewer.material_counts_pending(), pending);
-        assert_eq!(bindings["#bw_row0_needed"], if pending { "…" } else { "49" });
+        assert_eq!(
+            bindings["#bw_row0_needed"],
+            if pending { "…" } else { "49" }
+        );
     }
     // A finished page is remembered: asking again counts nothing.
     let mut bindings = serde_json::Map::new();
@@ -484,11 +528,26 @@ fn liquids_have_no_item_and_a_powered_torch_is_offered_as_the_item_it_places() {
 
 #[test]
 fn the_have_column_counts_what_the_player_carries_under_the_item_name() {
-    assert_eq!(browser::item_for_block("minecraft:soul_sand"), "minecraft:soul_sand");
-    assert_eq!(browser::item_for_block("minecraft:reeds"), "minecraft:sugar_cane");
-    assert_eq!(browser::item_for_block("minecraft:unpowered_repeater"), "minecraft:repeater");
-    assert_eq!(browser::item_for_block("minecraft:spruce_wall_sign"), "minecraft:spruce_sign");
-    assert_eq!(browser::item_for_block("minecraft:standing_sign"), "minecraft:oak_sign");
+    assert_eq!(
+        browser::item_for_block("minecraft:soul_sand"),
+        "minecraft:soul_sand"
+    );
+    assert_eq!(
+        browser::item_for_block("minecraft:reeds"),
+        "minecraft:sugar_cane"
+    );
+    assert_eq!(
+        browser::item_for_block("minecraft:unpowered_repeater"),
+        "minecraft:repeater"
+    );
+    assert_eq!(
+        browser::item_for_block("minecraft:spruce_wall_sign"),
+        "minecraft:spruce_sign"
+    );
+    assert_eq!(
+        browser::item_for_block("minecraft:standing_sign"),
+        "minecraft:oak_sign"
+    );
     let viewer = reference_viewer();
     {
         let mut cache = viewer.inventory.borrow_mut();
@@ -497,10 +556,30 @@ fn the_have_column_counts_what_the_player_carries_under_the_item_name() {
     let mut bindings = serde_json::Map::new();
     browser::bindings(&viewer, &mut bindings, &mut Vec::new());
     let names: Vec<_> = (0..4)
-        .map(|row| (bindings[&format!("#bw_row{row}_name")].clone(), bindings[&format!("#bw_row{row}_have")].clone()))
+        .map(|row| {
+            (
+                bindings[&format!("#bw_row{row}_name")].clone(),
+                bindings[&format!("#bw_row{row}_have")].clone(),
+            )
+        })
         .collect();
-    let cobble = names.iter().find(|(name, _)| name.as_str().is_some_and(|n| n.to_lowercase().contains("cobblestone"))).unwrap();
+    let cobble = names
+        .iter()
+        .find(|(name, _)| {
+            name.as_str()
+                .is_some_and(|n| n.to_lowercase().contains("cobblestone"))
+        })
+        .unwrap();
     assert_eq!(cobble.1, "37");
-    let other = names.iter().find(|(name, _)| !name.as_str().unwrap().to_lowercase().contains("cobblestone")).unwrap();
+    let other = names
+        .iter()
+        .find(|(name, _)| {
+            !name
+                .as_str()
+                .unwrap()
+                .to_lowercase()
+                .contains("cobblestone")
+        })
+        .unwrap();
     assert_eq!(other.1, "0");
 }

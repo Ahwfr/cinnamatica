@@ -104,7 +104,10 @@ pub(crate) fn selection(block: &BlockState) -> Option<Shape> {
         return Some(vec![plate(side, 0.1875)]);
     }
     if name.ends_with("fence_gate") {
-        let along_x = matches!(text(block, "minecraft:cardinal_direction")?, "south" | "north");
+        let along_x = matches!(
+            text(block, "minecraft:cardinal_direction")?,
+            "south" | "north"
+        );
         return Some(vec![if along_x {
             [0., 0., 0.375, 1., FULL_HEIGHT, 0.625]
         } else {
@@ -122,7 +125,10 @@ pub(crate) fn selection(block: &BlockState) -> Option<Shape> {
         return Some(vec![[0., 0., 0., 1., (height + 1).min(8) as f32 / 8., 1.]]);
     }
     if name == "ladder" {
-        return Some(vec![plate(mounted_side(int(block, "facing_direction")?)?, 0.1875)]);
+        return Some(vec![plate(
+            mounted_side(int(block, "facing_direction")?)?,
+            0.1875,
+        )]);
     }
     if name.ends_with("wall_sign") {
         let side = mounted_side(int(block, "facing_direction")?)?;
@@ -140,7 +146,11 @@ pub(crate) fn selection(block: &BlockState) -> Option<Shape> {
         };
         let [x0, y0, z0, x1, y1, z1] = plate(side, 0.125);
         let narrow = |low: f32, high: f32, edge: f32| {
-            if high - low < 1. { (low, high) } else { (edge, 1. - edge) }
+            if high - low < 1. {
+                (low, high)
+            } else {
+                (edge, 1. - edge)
+            }
         };
         let (x0, x1) = narrow(x0, x1, 0.3125);
         let (y0, y1) = narrow(y0, y1, 0.375);
@@ -148,7 +158,10 @@ pub(crate) fn selection(block: &BlockState) -> Option<Shape> {
         return Some(vec![[x0, y0, z0, x1, y1, z1]]);
     }
     if name == "torch" || name.ends_with("_torch") {
-        let floor = matches!(text(block, "torch_facing_direction"), Some("top" | "unknown"));
+        let floor = matches!(
+            text(block, "torch_facing_direction"),
+            Some("top" | "unknown")
+        );
         return Some(vec![if floor {
             [0.375, 0., 0.375, 0.625, 0.625, 0.625]
         } else {
@@ -167,7 +180,11 @@ pub(crate) fn selection(block: &BlockState) -> Option<Shape> {
     if name.contains("repeater") || name.contains("comparator") {
         return Some(vec![[0., 0., 0., 1., 0.125, 1.]]);
     }
-    if name == "chest" || name == "trapped_chest" || name == "ender_chest" || name.ends_with("copper_chest") {
+    if name == "chest"
+        || name == "trapped_chest"
+        || name == "ender_chest"
+        || name.ends_with("copper_chest")
+    {
         return Some(vec![[0.0625, 0., 0.0625, 0.9375, 0.875, 0.9375]]);
     }
     if name == "bed" {
@@ -205,10 +222,51 @@ pub(crate) fn selection(block: &BlockState) -> Option<Shape> {
 /// climbs has no exact shape here, so it gets a rough box half a block high.
 pub(crate) fn outline(block: &BlockState) -> Option<[f32; 6]> {
     let name = block.name.strip_prefix("minecraft:").unwrap_or(&block.name);
+    if name == "dragon_head" {
+        // Bounds measured from the native geometry.dragon head tree (scale .75),
+        // including jaw and horns. Apply the same mounting transform as the model.
+        let wall = int(block, "facing_direction").filter(|side| (2..=5).contains(side));
+        let yaw: f32 = match wall {
+            Some(2) => 0.,
+            Some(3) => 180.,
+            Some(4) => 90.,
+            Some(5) => 270.,
+            _ => 180. - int(block, "ground_sign_direction").unwrap_or(0) as f32 * 22.5,
+        };
+        let (s, c) = yaw.to_radians().sin_cos();
+        let mut bounds = [
+            f32::INFINITY,
+            0.,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            0.,
+            f32::NEG_INFINITY,
+        ];
+        for x in [-0.375, 0.375] {
+            for z in [-1.125, 0.28125] {
+                let z = z + if wall.is_some() { 0.25 } else { 0. };
+                let px = 0.5 + c * x + s * z;
+                let pz = 0.5 - s * x + c * z;
+                bounds[0] = bounds[0].min(px);
+                bounds[3] = bounds[3].max(px);
+                bounds[2] = bounds[2].min(pz);
+                bounds[5] = bounds[5].max(pz);
+            }
+        }
+        bounds[1] = if wall.is_some() { 0.25 } else { 0. };
+        bounds[4] = bounds[1] + 0.9375;
+        return Some(bounds);
+    }
     let rail = name == "rail" || name.ends_with("_rail");
-    let chest = name == "chest" || name == "trapped_chest" || name == "ender_chest" || name.ends_with("copper_chest");
-    let entity = name.ends_with("shulker_box") || name == "bed" || name == "decorated_pot"
-        || name.ends_with("_head") || name.ends_with("_skull");
+    let chest = name == "chest"
+        || name == "trapped_chest"
+        || name == "ender_chest"
+        || name.ends_with("copper_chest");
+    let entity = name.ends_with("shulker_box")
+        || name == "bed"
+        || name == "decorated_pot"
+        || name.ends_with("_head")
+        || name.ends_with("_skull");
     if !rail && !chest && !entity {
         return None;
     }
@@ -286,7 +344,9 @@ fn wall(block: &BlockState) -> Option<Shape> {
         text(block, "wall_connection_type_south"),
         text(block, "wall_connection_type_west"),
     ];
-    let any = kinds.iter().any(|kind| matches!(kind, Some("short" | "tall")));
+    let any = kinds
+        .iter()
+        .any(|kind| matches!(kind, Some("short" | "tall")));
     let side = |index: usize| !any || matches!(kinds[index], Some("short" | "tall"));
     let mut boxes = vec![[0.25, 0., 0.25, 0.75, FULL_HEIGHT, 0.75]];
     let (low, high) = (0.3125, 0.6875);
@@ -307,7 +367,13 @@ fn wall(block: &BlockState) -> Option<Shape> {
 
 /// Whether the ray from `eye` along `forward` passes through any of the boxes of the cell
 /// within `reach` blocks.
-pub(crate) fn ray_hits(eye: [f32; 3], forward: [f32; 3], cell: [i32; 3], shape: &Shape, reach: f32) -> bool {
+pub(crate) fn ray_hits(
+    eye: [f32; 3],
+    forward: [f32; 3],
+    cell: [i32; 3],
+    shape: &Shape,
+    reach: f32,
+) -> bool {
     shape.iter().any(|b| {
         let mut near = 0f32;
         let mut far = reach;
@@ -320,7 +386,10 @@ pub(crate) fn ray_hits(eye: [f32; 3], forward: [f32; 3], cell: [i32; 3], shape: 
                 }
                 continue;
             }
-            let (a, c) = ((low - eye[axis]) / forward[axis], (high - eye[axis]) / forward[axis]);
+            let (a, c) = (
+                (low - eye[axis]) / forward[axis],
+                (high - eye[axis]) / forward[axis],
+            );
             near = near.max(a.min(c));
             far = far.min(a.max(c));
             if near > far {
@@ -338,7 +407,9 @@ mod tests {
     fn block(name: &str, states: &[(&str, StateValue)]) -> BlockState {
         states
             .iter()
-            .fold(BlockState::new(name), |block, (key, value)| block.with(key, value.clone()))
+            .fold(BlockState::new(name), |block, (key, value)| {
+                block.with(key, value.clone())
+            })
     }
 
     #[test]
@@ -350,8 +421,20 @@ mod tests {
         let shape = selection(&slab).unwrap();
         assert_eq!(shape, vec![[0., 0., 0., 1., 0.5, 1.]]);
         // Flying through the upper half of the cell misses; through the lower half hits.
-        assert!(!ray_hits([0.5, 0.8, -2.5], [0., 0., 1.], [0, 0, 0], &shape, 6.));
-        assert!(ray_hits([0.5, 0.3, -2.5], [0., 0., 1.], [0, 0, 0], &shape, 6.));
+        assert!(!ray_hits(
+            [0.5, 0.8, -2.5],
+            [0., 0., 1.],
+            [0, 0, 0],
+            &shape,
+            6.
+        ));
+        assert!(ray_hits(
+            [0.5, 0.3, -2.5],
+            [0., 0., 1.],
+            [0, 0, 0],
+            &shape,
+            6.
+        ));
     }
 
     #[test]
@@ -362,28 +445,46 @@ mod tests {
             &[
                 ("door_hinge_bit", StateValue::Byte(0)),
                 ("open_bit", StateValue::Byte(0)),
-                ("minecraft:cardinal_direction", StateValue::Str("south".into())),
+                (
+                    "minecraft:cardinal_direction",
+                    StateValue::Str("south".into()),
+                ),
             ],
         );
-        assert_eq!(selection(&closed).unwrap(), vec![[0., 0., 0., 0.1875, 1., 1.]]);
+        assert_eq!(
+            selection(&closed).unwrap(),
+            vec![[0., 0., 0., 0.1875, 1., 1.]]
+        );
         let opened = block(
             "minecraft:wooden_door",
             &[
                 ("door_hinge_bit", StateValue::Byte(0)),
                 ("open_bit", StateValue::Byte(1)),
-                ("minecraft:cardinal_direction", StateValue::Str("south".into())),
+                (
+                    "minecraft:cardinal_direction",
+                    StateValue::Str("south".into()),
+                ),
             ],
         );
-        assert_eq!(selection(&opened).unwrap(), vec![[0., 0., 0., 1., 1., 0.1875]]);
+        assert_eq!(
+            selection(&opened).unwrap(),
+            vec![[0., 0., 0., 1., 1., 0.1875]]
+        );
         let mirrored = block(
             "minecraft:wooden_door",
             &[
                 ("door_hinge_bit", StateValue::Byte(1)),
                 ("open_bit", StateValue::Byte(1)),
-                ("minecraft:cardinal_direction", StateValue::Str("south".into())),
+                (
+                    "minecraft:cardinal_direction",
+                    StateValue::Str("south".into()),
+                ),
             ],
         );
-        assert_eq!(selection(&mirrored).unwrap(), vec![[0., 0., 0.8125, 1., 1., 1.]]);
+        assert_eq!(
+            selection(&mirrored).unwrap(),
+            vec![[0., 0., 0.8125, 1., 1., 1.]]
+        );
         let trapdoor = |direction: i32, open: i8, down: i8| {
             selection(&block(
                 "minecraft:trapdoor",
@@ -405,10 +506,22 @@ mod tests {
 
     #[test]
     fn ladders_signs_and_panes_leave_room_to_aim_past_them() {
-        let ladder = block("minecraft:ladder", &[("facing_direction", StateValue::Int(2))]);
-        assert_eq!(selection(&ladder).unwrap(), vec![[0., 0., 0.8125, 1., 1., 1.]]);
-        let sign = block("minecraft:wall_sign", &[("facing_direction", StateValue::Int(4))]);
-        assert_eq!(selection(&sign).unwrap(), vec![[0.875, 0.28, 0., 1., 0.78, 1.]]);
+        let ladder = block(
+            "minecraft:ladder",
+            &[("facing_direction", StateValue::Int(2))],
+        );
+        assert_eq!(
+            selection(&ladder).unwrap(),
+            vec![[0., 0., 0.8125, 1., 1., 1.]]
+        );
+        let sign = block(
+            "minecraft:wall_sign",
+            &[("facing_direction", StateValue::Int(4))],
+        );
+        assert_eq!(
+            selection(&sign).unwrap(),
+            vec![[0.875, 0.28, 0., 1., 0.78, 1.]]
+        );
         let pane = block(
             "minecraft:glass_pane",
             &[
@@ -420,8 +533,20 @@ mod tests {
         );
         let shape = selection(&pane).unwrap();
         // A pane running east to west is thin north to south: a ray offset from its middle passes.
-        assert!(!ray_hits([-2.5, 0.5, 0.2], [1., 0., 0.], [0, 0, 0], &shape, 6.));
-        assert!(ray_hits([-2.5, 0.5, 0.5], [1., 0., 0.], [0, 0, 0], &shape, 6.));
+        assert!(!ray_hits(
+            [-2.5, 0.5, 0.2],
+            [1., 0., 0.],
+            [0, 0, 0],
+            &shape,
+            6.
+        ));
+        assert!(ray_hits(
+            [-2.5, 0.5, 0.5],
+            [1., 0., 0.],
+            [0, 0, 0],
+            &shape,
+            6.
+        ));
         // A pane saved without connections is treated as connected all round.
         let bare = selection(&block("minecraft:glass_pane", &[])).unwrap();
         assert_eq!(bare.len(), 5);
@@ -429,7 +554,10 @@ mod tests {
 
     #[test]
     fn only_rails_and_chests_get_an_outline_box() {
-        let flat = block("minecraft:golden_rail", &[("rail_direction", StateValue::Int(1))]);
+        let flat = block(
+            "minecraft:golden_rail",
+            &[("rail_direction", StateValue::Int(1))],
+        );
         assert_eq!(outline(&flat), Some([0., 0., 0., 1., 0.125, 1.]));
         let climbing = block("minecraft:rail", &[("rail_direction", StateValue::Int(3))]);
         assert_eq!(outline(&climbing), Some([0., 0., 0., 1., 0.5, 1.]));

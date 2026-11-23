@@ -71,6 +71,9 @@ pub fn predicted_placement(
     let identity = fact.identity?;
     let canonical = collisions.block_canonical_state(mode, held)?;
     let identifier = collisions.block_identifier(mode, held);
+    if identifier == Some("minecraft:small_dripleaf_block") {
+        return crate::placement_dripleaf::predict(collisions, mode, held, world, context);
+    }
     let plant = identifier.and_then(|name| crate::placement_plants::states(name, canonical));
     let trip_wire = identifier == Some("minecraft:trip_wire");
     let ground_redstone = matches!(

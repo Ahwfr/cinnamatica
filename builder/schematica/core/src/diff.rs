@@ -41,7 +41,19 @@ pub fn classify(expected: &BlockState, actual: Option<&BlockState>, mode: MatchM
         (true, false) => CellStatus::Extra,
         (false, true) => CellStatus::Missing,
         (false, false) if expected.name != actual.name => CellStatus::Wrong,
-        (false, false) if mode == MatchMode::Exact && expected != actual => CellStatus::WrongState,
+        (false, false)
+            if mode == MatchMode::Exact
+                && !expected
+                    .states
+                    .iter()
+                    .filter(|(key, _)| key.as_str() != crate::state::DISPLAY_COLOR_STATE)
+                    .eq(actual
+                        .states
+                        .iter()
+                        .filter(|(key, _)| key.as_str() != crate::state::DISPLAY_COLOR_STATE)) =>
+        {
+            CellStatus::WrongState
+        }
         (false, false) => CellStatus::Correct,
     }
 }

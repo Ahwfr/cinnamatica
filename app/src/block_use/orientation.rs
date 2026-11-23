@@ -139,6 +139,7 @@ pub(super) fn wanted_quadrant(offer: &CreativePlacementOffer) -> Option<usize> {
             | "minecraft:bell"
             | "minecraft:beehive"
             | "minecraft:bee_nest"
+            | "minecraft:decorated_pot"
     ) {
         return planned.get("direction")?["value"]
             .as_u64()
@@ -262,6 +263,7 @@ pub(super) fn correction(
     if context.collisions.block_facts(mode, held).placement
         == assets::facts::PlacementRule::Unresolved
         && !gameplay::placement_items::predicts_named_orientation(&expected.name)
+        && expected.name != "minecraft:bed"
     {
         // Nothing predicts this block's state, but its facing follows the look direction.
         // Turn to the planned facing and keep the support the player already aims at.
@@ -276,6 +278,23 @@ pub(super) fn correction(
                     reported_facing_matches(expected, rotation)
                 })?
             };
+            // The stock server accepts floating standing grindstones. Keep their measured
+            // yaw correction even when V2 already selected the admissible air click.
+            if expected.strict_state
+                && observed.target.runtime_id == stream.air_block_id()
+                && observed.target.position == air_click_position(expected)
+                && air_place_face(expected) == Some(observed.target.face)
+            {
+                return Some(PlacementAim::observed(
+                    rotation,
+                    (
+                        observed.target.position,
+                        observed.target.face,
+                        observed.target.runtime_id,
+                    ),
+                    forward,
+                ));
+            }
             // The block points out of the face it is placed against, so the click must land on
             // that neighbour's face. Report that click without turning the camera.
             if observed.target.face == face
@@ -341,6 +360,7 @@ pub(super) fn correction(
     let stair = planned.contains_key("weirdo_direction");
     let planned_upper = planned_upper(&planned);
     let door = expected.name.ends_with("_door");
+    let paired = door || expected.name == "minecraft:bed";
     let matches = |candidate: &FrozenBlockObservation, view: LocalViewPose| {
         if !support_produces_half(
             planned_upper,
@@ -374,12 +394,15 @@ pub(super) fn correction(
             &surroundings,
             view,
         );
-        if door && prediction.is_none() {
-            return door_matches_facing(expected, view.rotation())
-                && surroundings
-                    .destination(candidate.target.position, candidate.target.face)
-                    .0
-                    == expected.position
+        if paired && prediction.is_none() {
+            return (if door {
+                door_matches_facing(expected, view.rotation())
+            } else {
+                wanted_quadrant(expected) == Some(look_quadrant(view.rotation()))
+            }) && surroundings
+                .destination(candidate.target.position, candidate.target.face)
+                .0
+                == expected.position
                 && paired_item_fits(
                     &context.collisions,
                     stream,
@@ -435,10 +458,16 @@ pub(super) fn correction(
     let mut best_dot = f32::NEG_INFINITY;
     let mut separate = None;
     let mut separate_dot = f32::NEG_INFINITY;
-    for face in (0..6).filter(|&face| (!door || face == 1) && support_produces_axis(expected, face))
+    for face in
+        (0..6).filter(|&face| (!paired || face == 1) && support_produces_axis(expected, face))
     {
         let clicked = placement_cell(expected.position, face ^ 1);
-        if world.is_air(clicked).unwrap_or(true) {
+        if !world.primary_runtime_id(clicked).is_ok_and(|block| {
+            gameplay::placement_items::placement_anchor(
+                context.collisions.block_facts(mode, block),
+                &expected.name,
+            )
+        }) {
             continue;
         }
         for direction in support_directions(clicked, face, eye) {
@@ -509,7 +538,7 @@ pub(super) fn correction(
         .or_else(|| {
             if bridge || expected.strict_state {
                 for face in (0..6)
-                    .filter(|&face| (!door || face == 1) && support_produces_axis(expected, face))
+                    .filter(|&face| (!paired || face == 1) && support_produces_axis(expected, face))
                 {
                     for height in [0.25, 0.75, 0.5] {
                         let Some(hit) =
@@ -845,7 +874,8 @@ fn placement_properties(
         }
     }
     planned.retain(|key, _| {
-        !(gameplay::placement_world_states::world_controlled_name(key)
+        !(key == mod_api::drawing::BLOCK_DISPLAY_COLOR_STATE
+            || gameplay::placement_world_states::world_controlled_name(key)
             || (wall && (key == "wall_post_bit" || key.starts_with("wall_connection_type_")))
             || ((pane || wire || fence) && key.starts_with("minecraft:connection_"))
             || ((trapdoor || gate || door) && key == "open_bit")
@@ -916,7 +946,13 @@ pub(super) fn recapture(
     if let Some(height) = aim.hidden_height {
         let (support, face, runtime_id) = aim.support;
         let ghost = placement_cell(support, face);
-        if !world.is_air(ghost).ok()? {
+        if !world.primary_runtime_id(ghost).is_ok_and(|block| {
+            gameplay::placement_items::replaceable_destination(
+                context
+                    .collisions
+                    .block_facts(stream.network_id_mode(), block),
+            )
+        }) {
             return None;
         }
         let hit = hidden_support_hit_at(&world, ghost, face, height)?;

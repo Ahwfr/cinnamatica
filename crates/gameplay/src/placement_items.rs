@@ -11,6 +11,23 @@ pub fn replaceable_destination(fact: assets::facts::BlockFact) -> bool {
     fact.readable && fact.traits.intersects(T::AIR | T::REPLACEABLE | T::WATER)
 }
 
+/// Clicking a replaceable neighbour replaces that neighbour, rather than placing beside it.
+/// It can be a destination, but must not be selected as an adjoining support for another cell.
+pub fn placement_anchor(fact: assets::facts::BlockFact, placing: &str) -> bool {
+    use assets::registry::BlockTraits as T;
+    // Water-surface items intentionally click water rather than replace it.
+    if fact.readable
+        && fact.traits.contains(T::WATER)
+        && matches!(placing, "minecraft:frog_spawn" | "minecraft:waterlily")
+    {
+        return true;
+    }
+    fact.readable
+        && !fact
+            .traits
+            .intersects(T::AIR | T::REPLACEABLE | T::WATER | T::LAVA)
+}
+
 /// Exact identities whose facing is resolved by the native per-type predictor even when
 /// their generated placement family is unresolved.
 pub fn predicts_named_orientation(name: &str) -> bool {

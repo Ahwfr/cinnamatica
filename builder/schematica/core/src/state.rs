@@ -1,6 +1,28 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+/// Display-only bed/banner dye hint; mirrors mod_api::drawing::BLOCK_DISPLAY_COLOR_STATE.
+/// Stored in existing SCB palette records, but not a server block property.
+pub const DISPLAY_COLOR_STATE: &str = "cinnabar:display_color";
+pub const DYE_NAMES: [&str; 16] = [
+    "white",
+    "orange",
+    "magenta",
+    "light_blue",
+    "yellow",
+    "lime",
+    "pink",
+    "gray",
+    "light_gray",
+    "cyan",
+    "purple",
+    "blue",
+    "brown",
+    "green",
+    "red",
+    "black",
+];
+
 /// A Bedrock block-state value. Bedrock stores booleans as bytes, ints as ints
 /// and everything else as strings, so the importer maps onto these three.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]

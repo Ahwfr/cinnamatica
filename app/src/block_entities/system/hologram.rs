@@ -28,7 +28,11 @@ pub(super) enum Piece {
     Chest(ChestModel),
     Shulker(ShulkerModel),
     Bed(render_model::BedModel),
-    Banner { wall: Option<Facing>, rotation: f32 },
+    Banner {
+        wall: Option<Facing>,
+        rotation: f32,
+        color: u8,
+    },
     Skull(render_model::SkullModel),
     Pot(Facing),
     Conduit,
@@ -236,6 +240,11 @@ fn facing(states: &str) -> Option<Facing> {
             value("facing_direction")
                 .and_then(|value| value.as_i64())
                 .and_then(Facing::from_facing_direction)
+        })
+        .or_else(|| {
+            value("direction")
+                .and_then(|value| value.as_i64())
+                .and_then(Facing::from_direction)
         })
 }
 

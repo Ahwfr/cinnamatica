@@ -292,6 +292,11 @@ pub(super) fn find_materials<'a>(
     let item_block = gameplay::placement_items::standing_form(collisions, mode, &offer.name)
         .unwrap_or_else(|| offer.name.clone());
     let quality = |stack: &NetworkItemStack| {
+        if let Some(aux) = material_aux(offer)
+            && stack.metadata != aux
+        {
+            return None;
+        }
         let block =
             super::build::fast_place_block(collisions, stream, ui, stack.block_runtime_id, || {
                 stream.authority().item_identifier(stack.network_id)
@@ -325,6 +330,20 @@ pub(super) fn find_materials<'a>(
         hotbar,
         carried,
         catalog,
+    }
+}
+
+/// The display hint selects an inventory variant; it is never a server state.
+fn material_aux(offer: &CreativePlacementOffer) -> Option<u32> {
+    let states: serde_json::Value = serde_json::from_str(&offer.states).ok()?;
+    let dye = states[mod_api::drawing::BLOCK_DISPLAY_COLOR_STATE]["value"].as_u64()?;
+    if dye >= 16 {
+        return None;
+    }
+    match offer.name.as_str() {
+        "minecraft:bed" => Some(dye as u32),
+        "minecraft:standing_banner" | "minecraft:wall_banner" => Some(15 - dye as u32),
+        _ => None,
     }
 }
 
@@ -668,9 +687,18 @@ pub(super) fn resume(
         || pending.input_generation != authority.0
         || pending.position_generation != movement.position_authority_identity().1
         || context.client_world.respawn.input_held()
-        || (!pending.selecting && player.selected_hotbar_slot() != Some(pending.original_slot))
+        || (!pending.selecting
+            && player.selected_hotbar_slot() != Some(pending.original_slot)
+            && player.selected_hotbar_slot() != Some(pending.slot))
     {
-        bevy::log::info!(block = %pending.offer.name, "Fast Place cancelled after its target, input, mode or deadline changed");
+        bevy::log::info!(block = %pending.offer.name,
+            mode_changed = player.facts.player_game_mode() != Some(pending.game_mode),
+            timed_out = context.time.elapsed() >= pending.expires,
+            released = pending.trigger == ItemUseTrigger::SimulationTick && !held,
+            input_changed = pending.input_generation != authority.0,
+            position_changed = pending.position_generation != movement.position_authority_identity().1,
+            selected = ?player.selected_hotbar_slot(), original_slot = pending.original_slot, requested_slot = pending.slot,
+            "Fast Place cancelled after its target, input, mode or deadline changed");
         movement.end_placement_facing();
         player
             .inventory

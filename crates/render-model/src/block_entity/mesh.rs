@@ -412,6 +412,17 @@ impl Facing {
         }
     }
 
+    /// Bedrock four-way `direction`: south, west, north, east.
+    pub const fn from_direction(id: i64) -> Option<Self> {
+        match id {
+            0 => Some(Self::South),
+            1 => Some(Self::West),
+            2 => Some(Self::North),
+            3 => Some(Self::East),
+            _ => None,
+        }
+    }
+
     #[must_use]
     pub fn from_cardinal(name: &str) -> Option<Self> {
         match name {

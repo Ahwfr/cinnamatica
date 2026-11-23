@@ -9,7 +9,12 @@ pub(super) fn piece(name: &str, states: &str) -> Option<Piece> {
     let entry = BlockEntityFacts::pinned().by_block_identifier(name)?;
     let state = super::super::super::state::BlockState::parse(states);
     Some(match entry.renderer {
-        R::Bed => Piece::Bed(super::super::super::describe::bed(&state, None)?),
+        R::Bed => Piece::Bed(super::super::super::describe::bed(
+            &state,
+            state
+                .int(mod_api::drawing::BLOCK_DISPLAY_COLOR_STATE)
+                .filter(|color| (0..16).contains(color)),
+        )?),
         R::Banner => Piece::Banner {
             wall: name
                 .contains("wall_")
@@ -20,6 +25,11 @@ pub(super) fn piece(name: &str, states: &str) -> Option<Piece> {
                 .unwrap_or(0)
                 .rem_euclid(16) as f32
                 * 22.5,
+            color: state
+                .int(mod_api::drawing::BLOCK_DISPLAY_COLOR_STATE)
+                .and_then(|value| u8::try_from(value).ok())
+                .filter(|value| *value < 16)
+                .unwrap_or(0),
         },
         R::Skull => Piece::Skull(render_model::SkullModel {
             kind: render_model::SkullKind::from_block_identifier(name)?,
@@ -49,14 +59,18 @@ impl Piece {
             Self::Shulker(model) => BlockEntityKind::Shulker(model),
             Self::Bed(model) => BlockEntityKind::Bed(model),
             Self::Skull(model) => BlockEntityKind::Skull(model),
-            Self::Banner { wall, rotation } => BlockEntityKind::Banner(render_model::BannerModel {
+            Self::Banner {
+                wall,
+                rotation,
+                color,
+            } => BlockEntityKind::Banner(render_model::BannerModel {
                 mount: wall.map_or(
                     render_model::BannerMount::Standing {
                         rotation_degrees: rotation,
                     },
                     render_model::BannerMount::Wall,
                 ),
-                base: assets::banner::color_linear(15),
+                base: assets::banner::color_linear(i64::from(15 - color)),
                 layers: std::sync::Arc::from([]),
             }),
             Self::Pot(facing) => BlockEntityKind::DecoratedPot(render_model::DecoratedPotModel {

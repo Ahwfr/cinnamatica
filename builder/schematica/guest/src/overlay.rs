@@ -882,7 +882,8 @@ impl Tile {
                     let local = p.world_to_local(schematic.size(), world).unwrap();
                     let id = schematic.palette_index(local).unwrap();
                     let expected = &preview.palette[id as usize];
-                    let (status, skip) = if schematic.palette()[id as usize].is_placement_artifact() {
+                    let (status, skip) = if schematic.palette()[id as usize].is_placement_artifact()
+                    {
                         (CellStatus::Correct, false)
                     } else {
                         let cell = ids.len();
@@ -1170,7 +1171,9 @@ impl Tile {
         if artifact {
             return false;
         }
-        let counted = |status: CellStatus, skip: bool| (!air || status == CellStatus::Extra) && !skip && !artifact;
+        let counted = |status: CellStatus, skip: bool| {
+            (!air || status == CellStatus::Extra) && !skip && !artifact
+        };
         if counted(old, old_skip) {
             self.tally.remove(old);
         }
@@ -1185,7 +1188,11 @@ impl Tile {
                 counts[slot] = counts[slot].saturating_add(1);
             }
         }
-        self.built = self.materials.iter().map(|counts| u64::from(counts[1])).sum();
+        self.built = self
+            .materials
+            .iter()
+            .map(|counts| u64::from(counts[1]))
+            .sum();
         self.mismatches.retain(|(cell, _)| *cell != world);
         if counted(status, skip) && status != CellStatus::Correct {
             self.mismatches.push((world, status));
@@ -1331,12 +1338,28 @@ fn compare(
         (true, true) => CellStatus::Correct,
         (true, false) => CellStatus::Extra,
         (false, true) => CellStatus::Missing,
-        (false, false) if matches!(name, "minecraft:water" | "minecraft:flowing_water")
-            && !ignored_material(&expected.name) => CellStatus::Missing,
-        (false, false) if name == "minecraft:dirt"
-            && matches!(expected.name.as_str(), "minecraft:farmland" | "minecraft:grass_path") => CellStatus::WrongState,
-        (false, false) if name.starts_with("minecraft:cave_vines")
-            && expected.name.starts_with("minecraft:cave_vines") && name != expected.name => CellStatus::WrongState,
+        (false, false)
+            if matches!(name, "minecraft:water" | "minecraft:flowing_water")
+                && !ignored_material(&expected.name) =>
+        {
+            CellStatus::Missing
+        }
+        (false, false)
+            if name == "minecraft:dirt"
+                && matches!(
+                    expected.name.as_str(),
+                    "minecraft:farmland" | "minecraft:grass_path"
+                ) =>
+        {
+            CellStatus::WrongState
+        }
+        (false, false)
+            if name.starts_with("minecraft:cave_vines")
+                && expected.name.starts_with("minecraft:cave_vines")
+                && name != expected.name =>
+        {
+            CellStatus::WrongState
+        }
         // Fast Place builds a double slab as the full block of its material.
         (false, false) if built_as_full_block(&expected.name, name) => CellStatus::Correct,
         // A powered or lit block counts as its plain block; the world lights it.
@@ -1387,7 +1410,8 @@ fn same_placed_state(expected: &str, actual: &str) -> bool {
     let placed = |state: &str| {
         let mut values: Map<String, serde_json::Value> = serde_json::from_str(state).ok()?;
         values.retain(|key, _| {
-            key == "open_bit" || !crate::WORLD_CONTROLLED_STATES.contains(&key.as_str())
+            key != schematica_core::state::DISPLAY_COLOR_STATE
+                && (key == "open_bit" || !crate::WORLD_CONTROLLED_STATES.contains(&key.as_str()))
         });
         Some(values)
     };
@@ -1699,7 +1723,12 @@ fn exposed_marker_faces(
 }
 
 /// The twelve edges of `bounds` (block-local min then max) as thin boxes.
-fn add_frame(mesh: &mut draw::Mesh, [x, y, z]: [i32; 3], bounds: [f32; 6], color: (f32, f32, f32, f32)) {
+fn add_frame(
+    mesh: &mut draw::Mesh,
+    [x, y, z]: [i32; 3],
+    bounds: [f32; 6],
+    color: (f32, f32, f32, f32),
+) {
     const EDGE: f32 = FRAME_EDGE;
     let origin = [x as f32, y as f32, z as f32];
     let low: [f32; 3] = std::array::from_fn(|axis| origin[axis] + bounds[axis] - MARKER_INSET);
@@ -1769,7 +1798,11 @@ fn add_outline(
     color: (f32, f32, f32, f32),
 ) -> bool {
     let flat = bounds[4] - bounds[1] <= FLAT_HEIGHT;
-    let cost = if flat { FLAT_FRAME_INDICES } else { FRAME_INDICES };
+    let cost = if flat {
+        FLAT_FRAME_INDICES
+    } else {
+        FRAME_INDICES
+    };
     if mesh.indices.len() + cost > MARKER_INDEX_BUDGET {
         return false;
     }
@@ -1792,7 +1825,9 @@ fn add_flat_frame(
     let lo = [origin[0] + bounds[0], origin[2] + bounds[2]];
     let hi = [origin[0] + bounds[3], origin[2] + bounds[5]];
     let top = origin[1] + bounds[4] + MARKER_INSET + 0.004;
-    let strip = FLAT_STRIP.min((hi[0] - lo[0]) / 2.).min((hi[1] - lo[1]) / 2.);
+    let strip = FLAT_STRIP
+        .min((hi[0] - lo[0]) / 2.)
+        .min((hi[1] - lo[1]) / 2.);
     let strips = [
         ([lo[0], lo[1]], [hi[0], lo[1] + strip]),
         ([lo[0], hi[1] - strip], [hi[0], hi[1]]),
@@ -1936,23 +1971,50 @@ fn block(name: &str) -> draw::NamedBlock {
 fn dirt_is_unfinished_soil_and_water_is_an_available_aquatic_destination() {
     let world = region_of(&["minecraft:dirt", "minecraft:water"]);
     for name in ["minecraft:farmland", "minecraft:grass_path"] {
-        assert_eq!(compare_cell(&world, 0, &block(name), false), (CellStatus::WrongState, false));
+        assert_eq!(
+            compare_cell(&world, 0, &block(name), false),
+            (CellStatus::WrongState, false)
+        );
     }
-    for name in ["minecraft:kelp", "minecraft:seagrass", "minecraft:sea_pickle"] {
-        assert_eq!(compare_cell(&world, 1, &block(name), false), (CellStatus::Missing, false));
+    for name in [
+        "minecraft:kelp",
+        "minecraft:seagrass",
+        "minecraft:sea_pickle",
+    ] {
+        assert_eq!(
+            compare_cell(&world, 1, &block(name), false),
+            (CellStatus::Missing, false)
+        );
     }
 }
 
 #[test]
 fn hoppers_and_calibrated_sensors_keep_orientation_but_ignore_live_power_phase() {
-    let state = |key: &str, value: serde_json::Value| json!({key: {"type":"int", "value":value}}).to_string();
-    assert!(!preview_states_match("minecraft:hopper", &state("facing_direction", json!(0)), &state("facing_direction", json!(3))));
-    let sensor = |direction: &str, phase: u8| json!({
-        "minecraft:cardinal_direction":{"type":"string","value":direction},
-        "sculk_sensor_phase":{"type":"int","value":phase}
-    }).to_string();
-    assert!(preview_states_match("minecraft:calibrated_sculk_sensor", &sensor("south", 0), &sensor("south", 2)));
-    assert!(!preview_states_match("minecraft:calibrated_sculk_sensor", &sensor("south", 0), &sensor("north", 0)));
+    let state = |key: &str, value: serde_json::Value| {
+        json!({key: {"type":"int", "value":value}}).to_string()
+    };
+    assert!(!preview_states_match(
+        "minecraft:hopper",
+        &state("facing_direction", json!(0)),
+        &state("facing_direction", json!(3))
+    ));
+    let sensor = |direction: &str, phase: u8| {
+        json!({
+            "minecraft:cardinal_direction":{"type":"string","value":direction},
+            "sculk_sensor_phase":{"type":"int","value":phase}
+        })
+        .to_string()
+    };
+    assert!(preview_states_match(
+        "minecraft:calibrated_sculk_sensor",
+        &sensor("south", 0),
+        &sensor("south", 2)
+    ));
+    assert!(!preview_states_match(
+        "minecraft:calibrated_sculk_sensor",
+        &sensor("south", 0),
+        &sensor("north", 0)
+    ));
 }
 
 #[test]
@@ -2060,7 +2122,12 @@ fn a_frame_is_twelve_thin_boxes_inside_the_given_bounds() {
         vertices: Vec::new(),
         indices: Vec::new(),
     };
-    add_frame(&mut mesh, [10, 64, -3], [0., 0., 0., 1., 0.125, 1.], GHOST_FRAME);
+    add_frame(
+        &mut mesh,
+        [10, 64, -3],
+        [0., 0., 0., 1., 0.125, 1.],
+        GHOST_FRAME,
+    );
     assert_eq!(mesh.vertices.len(), 12 * 8);
     assert_eq!(mesh.indices.len(), 12 * 36);
     let (mut low, mut high) = ([f32::MAX; 3], [f32::MIN; 3]);
@@ -2071,8 +2138,14 @@ fn a_frame_is_twelve_thin_boxes_inside_the_given_bounds() {
             high[axis] = high[axis].max(position[axis]);
         }
     }
-    assert!((low[1] - (64. - MARKER_INSET)).abs() < 1e-4 && (high[1] - (64.125 + MARKER_INSET)).abs() < 1e-4);
-    assert!((low[0] - (10. - MARKER_INSET)).abs() < 1e-4 && (high[2] - (-2. + MARKER_INSET)).abs() < 1e-4);
+    assert!(
+        (low[1] - (64. - MARKER_INSET)).abs() < 1e-4
+            && (high[1] - (64.125 + MARKER_INSET)).abs() < 1e-4
+    );
+    assert!(
+        (low[0] - (10. - MARKER_INSET)).abs() < 1e-4
+            && (high[2] - (-2. + MARKER_INSET)).abs() < 1e-4
+    );
 }
 
 #[cfg(test)]
@@ -2149,7 +2222,13 @@ fn a_hot_change_moves_the_counts_and_the_wrong_cell_list_at_once() {
     // Broken again: back to missing, and the wrong entry is gone.
     assert!(tile.apply_hot(preview, schematic, world, CellStatus::Missing, false));
     assert_eq!((tile.tally.missing, tile.tally.wrong), (missing, 0));
-    assert_eq!(tile.mismatches.iter().filter(|(cell, _)| *cell == world).count(), 1);
+    assert_eq!(
+        tile.mismatches
+            .iter()
+            .filter(|(cell, _)| *cell == world)
+            .count(),
+        1
+    );
     assert!(tile.mismatches.contains(&(world, CellStatus::Missing)));
     assert_eq!(tile.materials[id][0], viewer_total(&viewer, id));
 }
@@ -2166,7 +2245,8 @@ fn viewer_total(viewer: &crate::Viewer, id: usize) -> u16 {
         .count() as u16
         + (0..viewer.schematic.palette().len())
             .filter(|&other| other == id)
-            .count() as u16 * 0
+            .count() as u16
+            * 0
         + tile_missing_for(viewer, id)
 }
 
@@ -2204,12 +2284,20 @@ fn a_flat_rail_frame_is_four_cheap_strips_and_a_section_never_outgrows_the_host_
         vertices: Vec::new(),
         indices: Vec::new(),
     };
-    assert!(add_outline(&mut mesh, [3, 64, 3], [0., 0., 0., 1., 0.0625, 1.], GHOST_FRAME));
+    assert!(add_outline(
+        &mut mesh,
+        [3, 64, 3],
+        [0., 0., 0., 1., 0.0625, 1.],
+        GHOST_FRAME
+    ));
     assert_eq!(mesh.vertices.len(), 16);
     assert_eq!(mesh.indices.len(), FLAT_FRAME_INDICES);
     for vertex in &mesh.vertices {
         let (x, y, z) = vertex.position;
-        assert!((3.0..=4.0).contains(&x) && (3.0..=4.0).contains(&z), "{x} {z}");
+        assert!(
+            (3.0..=4.0).contains(&x) && (3.0..=4.0).contains(&z),
+            "{x} {z}"
+        );
         assert!((64.0..=64.2).contains(&y), "{y}");
     }
     // A chest keeps the twelve edges.
@@ -2217,7 +2305,12 @@ fn a_flat_rail_frame_is_four_cheap_strips_and_a_section_never_outgrows_the_host_
         vertices: Vec::new(),
         indices: Vec::new(),
     };
-    assert!(add_outline(&mut chest, [0, 0, 0], [0.06, 0., 0.06, 0.94, 0.875, 0.94], GHOST_FRAME));
+    assert!(add_outline(
+        &mut chest,
+        [0, 0, 0],
+        [0.06, 0., 0.06, 0.94, 0.875, 0.94],
+        GHOST_FRAME
+    ));
     assert_eq!(chest.indices.len(), FRAME_INDICES);
     // Thousands of rails stop adding outlines before the geometry limit, instead of failing.
     let mut many = draw::Mesh {
@@ -2226,7 +2319,12 @@ fn a_flat_rail_frame_is_four_cheap_strips_and_a_section_never_outgrows_the_host_
     };
     let mut drawn = 0;
     for index in 0..20_000 {
-        drawn += usize::from(add_outline(&mut many, [index, 0, 0], [0., 0., 0., 1., 0.0625, 1.], GHOST_FRAME));
+        drawn += usize::from(add_outline(
+            &mut many,
+            [index, 0, 0],
+            [0., 0., 0., 1., 0.0625, 1.],
+            GHOST_FRAME,
+        ));
     }
     assert!(many.indices.len() <= MARKER_INDEX_BUDGET && many.indices.len() < 196_608);
     assert!(drawn > 2_000 && drawn < 20_000);
@@ -2251,13 +2349,19 @@ fn the_render_gate_follows_what_a_section_check_cost() {
 #[test]
 fn a_double_chest_gets_one_frame_round_both_halves() {
     use schematica_core::{BlockState, StateValue};
-    let chest = |face: i32| BlockState::new("minecraft:chest").with("facing_direction", StateValue::Int(face));
+    let chest = |face: i32| {
+        BlockState::new("minecraft:chest").with("facing_direction", StateValue::Int(face))
+    };
     let palette = vec![chest(2), chest(4), BlockState::new("minecraft:rail")];
     // Cells 0 and 1 on the x axis are both facing north (palette 0): a double chest.
-    let id_at = |cell: [i32; 3]| (cell[1] == 0 && cell[2] == 0 && (0..2).contains(&cell[0])).then_some(0);
+    let id_at =
+        |cell: [i32; 3]| (cell[1] == 0 && cell[2] == 0 && (0..2).contains(&cell[0])).then_some(0);
     let both = |cell: [i32; 3]| id_at(cell).is_some();
     let low = outline_bounds(&palette, 0, [0, 0, 0], &id_at, &both).expect("the low half draws");
-    assert!((low[0] - 0.06).abs() < 0.01 && (low[3] - 1.94).abs() < 0.01, "{low:?}");
+    assert!(
+        (low[0] - 0.06).abs() < 0.01 && (low[3] - 1.94).abs() < 0.01,
+        "{low:?}"
+    );
     assert_eq!(outline_bounds(&palette, 0, [1, 0, 0], &id_at, &both), None);
     // Only one half still missing: that half is outlined on its own.
     let only_high = |cell: [i32; 3]| cell == [1, 0, 0];

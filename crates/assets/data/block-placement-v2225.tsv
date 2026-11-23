@@ -56,7 +56,7 @@ minecraft:bamboo_standing_sign	StandingSign	Vanilla	minecraft:bamboo_wall_sign
 minecraft:bamboo_trapdoor	Trapdoor	Vanilla	-
 minecraft:bamboo_wall_sign	WallSign	Vanilla	minecraft:bamboo_standing_sign
 minecraft:barrel	Unresolved	Vanilla	-
-minecraft:barrier	Identity	Vanilla	-
+minecraft:barrier	Identity	SnowBlocked	-
 minecraft:basalt	Axis	Vanilla	-
 minecraft:beacon	Identity	Vanilla	-
 minecraft:bed	Unresolved	Vanilla	-
@@ -450,7 +450,7 @@ minecraft:flowing_lava	Unresolved	Lava	-
 minecraft:flowing_water	Unresolved	Water	-
 minecraft:frame	Unresolved	Vanilla	-
 minecraft:frog_spawn	FrogSpawn	Vanilla	-
-minecraft:frosted_ice	Unresolved	Vanilla	-
+minecraft:frosted_ice	Unresolved	SnowBlocked	-
 minecraft:furnace	Unresolved	Vanilla	-
 minecraft:gilded_blackstone	Identity	Vanilla	-
 minecraft:glass	Identity	Vanilla	-
@@ -518,7 +518,7 @@ minecraft:horn_coral	Identity	Vanilla	-
 minecraft:horn_coral_block	Identity	Vanilla	-
 minecraft:horn_coral_fan	Unresolved	Vanilla	-
 minecraft:horn_coral_wall_fan	Unresolved	Vanilla	-
-minecraft:ice	Identity	Vanilla	-
+minecraft:ice	Identity	SnowBlocked	-
 minecraft:infested_chiseled_stone_bricks	Identity	Vanilla	-
 minecraft:infested_cobblestone	Identity	Vanilla	-
 minecraft:infested_cracked_stone_bricks	Identity	Vanilla	-

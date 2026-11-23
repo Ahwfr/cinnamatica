@@ -11,7 +11,9 @@ pub mod ordered_interactions;
 mod placement_connections;
 mod placement_custom;
 mod placement_doors;
+mod placement_dripleaf;
 pub mod placement_facing;
+pub mod placement_items;
 mod placement_multiface;
 #[cfg(test)]
 mod placement_oracle;
@@ -23,7 +25,6 @@ mod placement_stairs;
 pub mod placement_state;
 mod placement_support;
 mod placement_vines;
-pub mod placement_items;
 pub mod placement_world_states;
 pub mod survival_mining;
 

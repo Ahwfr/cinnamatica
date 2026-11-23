@@ -219,6 +219,26 @@ fn translate_java_block(key: &str) -> Result<BlockState> {
             .states
             .insert(property.to_string(), StateValue::parse(value));
     }
+    if matches!(
+        mapped.name.as_str(),
+        "minecraft:bed" | "minecraft:standing_banner" | "minecraft:wall_banner"
+    ) {
+        let short = block.strip_prefix("minecraft:").unwrap_or(block);
+        let color = short
+            .strip_suffix("_wall_banner")
+            .or_else(|| short.strip_suffix("_banner"))
+            .or_else(|| short.strip_suffix("_bed"));
+        if let Some(dye) = color.and_then(|color| {
+            schematica_core::state::DYE_NAMES
+                .iter()
+                .position(|name| *name == color)
+        }) {
+            mapped.states.insert(
+                schematica_core::state::DISPLAY_COLOR_STATE.into(),
+                StateValue::Byte(dye as i8),
+            );
+        }
+    }
     if mapped.name.ends_with("glass_pane") || mapped.name == "minecraft:iron_bars" {
         for (direction, value) in source.properties() {
             if matches!(direction.as_str(), "north" | "east" | "south" | "west")
@@ -517,6 +537,22 @@ fn list(tag: &NbtValue) -> Result<&[NbtValue]> {
 mod tests {
     use super::*;
     use nucleation::{UniversalSchematic, formats::mcstructure};
+
+    #[test]
+    fn java_bed_and_banner_colors_survive_translation() -> Result<()> {
+        use schematica_core::state::{DISPLAY_COLOR_STATE, DYE_NAMES};
+        for (dye, name) in DYE_NAMES.into_iter().enumerate() {
+            for suffix in ["bed", "banner", "wall_banner"] {
+                let block = translate_java_block(&format!("minecraft:{name}_{suffix}"))?;
+                assert_eq!(
+                    block.states.get(DISPLAY_COLOR_STATE),
+                    Some(&StateValue::Byte(dye as i8)),
+                    "{name}_{suffix}"
+                );
+            }
+        }
+        Ok(())
+    }
 
     #[test]
     fn old_java_grass_imports_as_short_grass() -> Result<()> {

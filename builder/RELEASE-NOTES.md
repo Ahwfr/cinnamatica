@@ -1,3 +1,13 @@
+# Cinnamatica 0.3.64
+
+- Resolve bed-head placement targets to their paired foot through schematic rotations and mirrors, and solve bed placement against a floor instead of an existing bed side.
+- Exclude replaceable vegetation and fluids from adjacent support candidates; keep direct replacement at the requested destination.
+- Broaden snow-layer support prediction to measured solid surfaces while excluding ice, frosted ice and barriers. Predict small dripleaf pairs on dry clay/moss or suitable submerged soil.
+- Preserve requested hotbar selection during pending Fast Place preparation and log concrete cancellation reasons for further diagnosis.
+- Preserve dye colors on newly imported Java beds and banners, render their corresponding native artwork, and select the matching inventory variant. Previously imported color data cannot be reconstructed; reimport the original schematic. Pattern artwork and block-entity color verification/pasting are not added by this change.
+- Correct decorated-pot facing, floating grindstone yaw correction and dragon-head outline bounds.
+- See BLOCK-BUGS-0.3.64.md for measured server constraints and the testing checklist. This does not introduce commands into Fast Place or promise every unsupported orientation is accepted by the server.
+
 # Cinnamatica 0.3.63
 
 - Preserve the newer public-main Debug target readout, session-derived item routes, dropper prediction and stateless-block placement fixes (through public commit 460199c6d), alongside this repair.
