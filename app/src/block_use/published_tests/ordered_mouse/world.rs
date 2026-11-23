@@ -984,3 +984,32 @@ fn a_fast_place_click_without_support_selects_the_block_and_places_nothing() {
     );
     assert_eq!(cell(app.world(), ghost).unwrap(), block_id("minecraft:air"));
 }
+
+/// With nothing to click, the Debug readout says why: V1 Classic never clicks into air, and a
+/// top-half trapdoor needs a block beside or above it.
+#[test]
+fn a_fast_place_preview_names_why_a_floating_ghost_has_no_target() {
+    let top = r#"{"direction":{"type":"int","value":0},"open_bit":{"type":"byte","value":0},"upside_down_bit":{"type":"byte","value":1}}"#;
+    for (strict, states, expected) in [(false, None, "V1 Classic"), (true, Some(top), "top half")] {
+        let (mut app, _captured) = boundary_fixture();
+        let world = app.world_mut();
+        world
+            .resource_mut::<client_state::PlayerRuntime>()
+            .facts
+            .publish_player_game_mode(PlayerGameMode::Creative);
+        preview_offer(world, [17, 1, 15], "minecraft:spruce_trapdoor");
+        {
+            let mut placement =
+                world.resource_mut::<crate::block_use::creative::CreativePlacement>();
+            let offer = placement.offer.as_mut().unwrap();
+            offer.strict_state = strict;
+            offer.correct_aim = true;
+            if let Some(states) = states {
+                offer.states = states.into();
+            }
+        }
+        super::before_physics(&mut app);
+        let verdict = preview(app.world()).verdict;
+        assert!(verdict.contains(expected), "{verdict}");
+    }
+}

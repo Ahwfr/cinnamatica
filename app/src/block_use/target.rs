@@ -35,19 +35,99 @@ pub(super) fn observe_bridge_target(
     position_generation: PositionAuthorityGeneration,
     state: &gameplay::movement::UnsentSampleView,
 ) -> Option<FrozenBlockObservation> {
+    bridge_target(
+        player,
+        context,
+        origin,
+        input_mode,
+        authority,
+        position_generation,
+        state,
+    )
+    .ok()
+}
+
+/// Why [`bridge_target`] found nothing to click for the Fast Place offer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum BridgeMiss {
+    NoOffer,
+    AimOff,
+    NotBuilding,
+    HandNotReady,
+    WorldUnavailable,
+    Occupied,
+    NoSupportV1,
+    NoSupportTopHalf,
+    NoSupportNoAirPlace,
+    AirOutOfReach,
+}
+
+impl BridgeMiss {
+    /// The Debug readout's wording.
+    pub(super) fn describe(self) -> &'static str {
+        match self {
+            BridgeMiss::NoOffer => "no ghost offered",
+            BridgeMiss::AimOff => "no nearby support search: Auto orientation is off",
+            BridgeMiss::NotBuilding => "not in Creative or Survival, or riding",
+            BridgeMiss::HandNotReady => "the held item is still being confirmed by the server",
+            BridgeMiss::WorldUnavailable => "the world around the ghost is not loaded",
+            BridgeMiss::Occupied => "the client sees a block in the ghost cell",
+            BridgeMiss::NoSupportV1 => {
+                "no support face in reach, and V1 Classic never clicks into air"
+            }
+            BridgeMiss::NoSupportTopHalf => {
+                "no support face in reach; a top half needs a block beside it or above it"
+            }
+            BridgeMiss::NoSupportNoAirPlace => {
+                "no support face in reach, and this block cannot be placed into air"
+            }
+            BridgeMiss::AirOutOfReach => "no support face in reach, and the air click is too far",
+        }
+    }
+}
+
+/// [`observe_bridge_target`], saying why it found nothing.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "shares the press context of its callers"
+)]
+pub(super) fn bridge_target(
+    player: &client_state::PlayerRuntime,
+    context: &BlockUseContext,
+    origin: &InteractionOriginSnapshot,
+    input_mode: PlayerInputMode,
+    authority: (InputAuthorityGeneration, InputSequence),
+    position_generation: PositionAuthorityGeneration,
+    state: &gameplay::movement::UnsentSampleView,
+) -> Result<FrozenBlockObservation, BridgeMiss> {
     use bevy::prelude::Vec3;
-    let offer = context.creative.as_ref()?.offer.as_ref()?;
-    let mode = player.facts.player_game_mode()?;
+    let offer = context
+        .creative
+        .as_ref()
+        .and_then(|policy| policy.offer.as_ref())
+        .ok_or(BridgeMiss::NoOffer)?;
+    let mode = player
+        .facts
+        .player_game_mode()
+        .ok_or(BridgeMiss::NotBuilding)?;
     let reach = match mode {
         protocol::PlayerGameMode::Survival => survival_reach(input_mode),
         protocol::PlayerGameMode::Creative => creative_reach(input_mode),
-        _ => return None,
+        _ => return Err(BridgeMiss::NotBuilding),
     };
-    if !offer.correct_aim || player.facts.mount_unique_id().is_some() {
-        return None;
+    if !offer.correct_aim {
+        return Err(BridgeMiss::AimOff);
     }
-    let stream = context.client_world.stream.as_ref()?;
-    let selection = verified_use_selection(player, &context.ui)?;
+    if player.facts.mount_unique_id().is_some() {
+        return Err(BridgeMiss::NotBuilding);
+    }
+    let stream = context
+        .client_world
+        .stream
+        .as_ref()
+        .ok_or(BridgeMiss::WorldUnavailable)?;
+    let selection = verified_use_selection(player, &context.ui).ok_or(BridgeMiss::HandNotReady)?;
+    let mut miss = None;
     let mut direction = None;
     let mut observation = crate::interaction_authority::observe_block_ray_using(
         origin,
@@ -71,6 +151,7 @@ pub(super) fn observe_bridge_target(
                         context.collisions.block_facts(mode, block),
                     ))
                 {
+                    miss = Some(BridgeMiss::Occupied);
                     return Ok(None);
                 }
                 let hit = world.block_interaction_ray_current(eye, forward, reach)?;
@@ -181,6 +262,17 @@ pub(super) fn observe_bridge_target(
                     direction = Some(aim.to_array());
                 }
             }
+            if best.is_none() {
+                miss = Some(if !offer.strict_state {
+                    BridgeMiss::NoSupportV1
+                } else if half == Some(true) {
+                    BridgeMiss::NoSupportTopHalf
+                } else if air_face.is_none() {
+                    BridgeMiss::NoSupportNoAirPlace
+                } else {
+                    BridgeMiss::AirOutOfReach
+                });
+            }
             if best.is_none()
                 && let Some(face) = air_face
             {
@@ -207,10 +299,11 @@ pub(super) fn observe_bridge_target(
             Ok(best)
         },
     )
-    .ok()?
-    .value?;
-    observation.ray.direction = direction?;
-    Some(observation)
+    .map_err(|_| BridgeMiss::WorldUnavailable)?
+    .value
+    .ok_or(miss.unwrap_or(BridgeMiss::Occupied))?;
+    observation.ray.direction = direction.ok_or(BridgeMiss::WorldUnavailable)?;
+    Ok(observation)
 }
 
 /// Synthesizes a click on the empty destination, retaining its loaded world identity.

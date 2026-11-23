@@ -65,8 +65,9 @@ pub(super) fn preview(
     );
     let native = observed.filter(|hit| super::target::on_planned_face(&raw, hit));
     let bridge = native.is_none();
-    let Some(target) = native.or_else(|| {
-        super::target::observe_bridge_target(
+    let target = match native {
+        Some(native) => native,
+        None => match super::target::bridge_target(
             player,
             context,
             &context.origin,
@@ -74,12 +75,13 @@ pub(super) fn preview(
             authority,
             movement.position_authority_identity().1,
             &state,
-        )
-    }) else {
-        return finish(
-            prediction,
-            "no support face for the ghost in reach; a click puts the item in your hand",
-        );
+        ) {
+            Ok(bridge) => bridge,
+            Err(miss) => {
+                let verdict = format!("{}; a click puts the item in your hand", miss.describe());
+                return finish(prediction, &verdict);
+            }
+        },
     };
     prediction.support = Some(target.target.position);
     prediction.face = Some(target.target.face);
