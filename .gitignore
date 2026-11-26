@@ -24,3 +24,6 @@ __pycache__/
 
 # Generated browser bindings.
 /web/site/pkg/
+
+# Local Bedrock Dedicated Server used for testing; never commit it.
+/bedrock-server-*/
