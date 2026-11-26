@@ -325,6 +325,8 @@ pub struct Tile {
 #[derive(Default)]
 pub struct WholeGhost {
     packed: Vec<u32>,
+    upload_palette: Vec<draw::BlockState>,
+    upload: Option<draw::GeometrySpec>,
     distant: coverage::DistantScan,
     hidden: Vec<bool>,
     changes: BTreeMap<[u32; 3], u32>,
@@ -394,6 +396,16 @@ impl WholeGhost {
         lightness: f32,
     ) -> bool {
         if let Some(pair) = &mut self.pair {
+            // Canonical palette strings can be expensive to free in the same callback
+            // that lowers the full grid through WIT. Retire the upload a few per frame.
+            if let Some(draw::GeometrySpec::Blocks(grid)) = self.upload.as_mut() {
+                for _ in 0..32 {
+                    grid.palette.pop();
+                }
+                if grid.palette.is_empty() {
+                    self.upload = None;
+                }
+            }
             let ready = self.retiring.is_none()
                 || matches!(
                     draw::geometry_status(pair.geometry),
@@ -435,23 +447,39 @@ impl WholeGhost {
             }
             return false;
         }
+        if self.upload.is_none() && self.upload_palette.len() <= preview.palette.len() {
+            if self.upload_palette.is_empty() {
+                self.upload_palette
+                    .push(draw::BlockState::Named(draw::NamedBlock {
+                        name: "minecraft:air".into(),
+                        states: "{}".into(),
+                    }));
+            }
+            let start = self.upload_palette.len() - 1;
+            self.upload_palette.extend(
+                preview
+                    .palette
+                    .iter()
+                    .skip(start)
+                    .take(32)
+                    .cloned()
+                    .map(draw::BlockState::Named),
+            );
+            return false;
+        }
         if budget::remaining_fuel() < 750_000 {
             return false;
         }
-        let palette = std::iter::once(draw::BlockState::Named(draw::NamedBlock {
-            name: "minecraft:air".into(),
-            states: "{}".into(),
-        }))
-        .chain(preview.palette.iter().cloned().map(draw::BlockState::Named))
-        .collect();
+        let palette = std::mem::take(&mut self.upload_palette);
         let cells = std::mem::take(&mut self.packed);
         let grid = draw::BlockGrid {
             size: (sx as u32, sy as u32, sz as u32),
             palette,
             cells,
         };
-        match create(
-            draw::GeometrySpec::Blocks(grid),
+        self.upload = Some(draw::GeometrySpec::Blocks(grid));
+        match create_borrowed(
+            self.upload.as_ref().unwrap(),
             draw::BlockAnchor {
                 dimension,
                 position: lo.into(),
@@ -1653,8 +1681,17 @@ fn create(
     lightness: f32,
     visible: bool,
 ) -> Result<DrawPair, draw::DrawError> {
+    create_borrowed(&spec, anchor, lightness, visible)
+}
+
+fn create_borrowed(
+    spec: &draw::GeometrySpec,
+    anchor: draw::BlockAnchor,
+    lightness: f32,
+    visible: bool,
+) -> Result<DrawPair, draw::DrawError> {
     let textured = matches!(&spec, draw::GeometrySpec::Blocks(_));
-    let geometry = draw::create_geometry(&spec)?;
+    let geometry = draw::create_geometry(spec)?;
     let mut params = vec![0.; 16];
     if textured {
         params[OUTLINE_PARAM] = 1.;

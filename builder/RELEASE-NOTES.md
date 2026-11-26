@@ -1,3 +1,9 @@
+# Cinnamatica 0.3.65
+
+- Raise the shared importer/guest palette limit from 1,024 to 4,096 distinct states so a complete block catalogue fits in one schematic. Preserve the embedded library format, eight library slots, volume limits and total decoded-byte budget.
+- Prepare large transfer palettes and retire their temporary strings across bounded callbacks; keep the retained hologram as one complete grid. This avoids a frame-fuel failure reproduced with the complete block catalogue.
+- Add a boundary round-trip/rejection test. No native client changes are needed.
+
 # Cinnamatica 0.3.64
 
 - Resolve bed-head placement targets to their paired foot through schematic rotations and mirrors, and solve bed placement against a floor instead of an existing bed side.

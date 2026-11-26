@@ -2,7 +2,9 @@ use crate::{BlockState, Schematic, StateValue};
 
 pub const MAX_EDGE: i32 = 128;
 pub const MAX_CELLS: usize = 400_000;
-const MAX_PALETTE: usize = 1024;
+// Enough for the complete current Bedrock block catalogue plus orientation/color
+// variants. Palette data still shares the bounded embedded-library byte budget.
+pub const MAX_PALETTE: usize = 4096;
 pub const SLOT_MARKER: &[u8] = b"schematica:embedded-library:v4\x00";
 pub const MAX_LIBRARY: usize = 8;
 // Preserve the existing fixed WASM slot and old imported libraries. The 32 KiB term
@@ -392,5 +394,26 @@ mod tests {
             .contains("library-entry capacity"));
         assert!(Decoder::new(&vec![0; PAYLOAD_BYTES + 1]).is_err());
         assert!(library(&vec![0; LIBRARY_BYTES + 1]).is_err());
+    }
+
+    #[test]
+    fn extended_palette_round_trips_and_rejects_the_next_entry() {
+        let mut schematic = Schematic::new("full catalogue", [64, 1, 64]);
+        for index in 1..MAX_PALETTE {
+            schematic.set(
+                [(index % 64) as i32, 0, (index / 64) as i32],
+                BlockState::new("minecraft:test").with("variant", StateValue::Int(index as i32)),
+            );
+        }
+        let bytes = encode(&schematic).unwrap();
+        assert_eq!(decode(&bytes).unwrap().palette(), schematic.palette());
+        // Cell zero was air; adding a new state exceeds the palette bound.
+        schematic.set([0, 0, 0], BlockState::new("minecraft:over_limit"));
+        assert!(encode(&schematic)
+            .unwrap_err()
+            .contains("distinct block states"));
+        let mut invalid = bytes;
+        invalid[7..9].copy_from_slice(&((MAX_PALETTE + 1) as u16).to_le_bytes());
+        assert!(Decoder::new(&invalid).is_err());
     }
 }
