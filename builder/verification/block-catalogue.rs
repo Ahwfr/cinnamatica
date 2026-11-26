@@ -32,7 +32,18 @@ fn score(b: &BlockState) -> i32 {
     b.states
         .iter()
         .map(|(k, v)| {
+            // Glazed terracotta and wall mounts register vertical permutations,
+            // but a player's item only creates horizontal facings. Do not make
+            // the test ask Fast Place for an impossible floor/ceiling variant.
+            if k == "facing_direction"
+                && (b.name.ends_with("glazed_terracotta") || b.name.contains("wall_"))
+                && n(v).is_some_and(|face| face < 2)
+            {
+                return 100;
+            }
             let want = match k.as_str() {
+                "facing_direction" if b.name.ends_with("_head") || b.name.ends_with("_skull") => 1,
+                "huge_mushroom_bits" if b.name == "minecraft:mushroom_stem" => 15,
                 "wall_post_bit" => 1,
                 "hanging" | "attached_bit" if b.name.ends_with("hanging_sign") => 1,
                 _ => 0,
@@ -132,8 +143,21 @@ fn main() {
         }
         let mut cells = vec![p];
         let mut pair = None;
-        if b.name == "minecraft:bed" && b.states.get("head_piece_bit").and_then(n) == Some(0) {
-            let q = b.states.get("direction").and_then(n).unwrap() as usize;
+        if matches!(b.name.as_str(), "minecraft:bed" | "minecraft:straw_bed")
+            && b.states.get("head_piece_bit").and_then(n) == Some(0)
+        {
+            let q = b
+                .states
+                .get("direction")
+                .and_then(n)
+                .map(|value| value as usize)
+                .or_else(|| match b.states.get("minecraft:cardinal_direction") {
+                    Some(StateValue::Str(value)) => ["south", "west", "north", "east"]
+                        .iter()
+                        .position(|s| *s == value),
+                    _ => None,
+                })
+                .unwrap();
             let off = [[0, 0, 1], [-1, 0, 0], [0, 0, -1], [1, 0, 0]][q];
             pair = Some((std::array::from_fn(|i| p[i] + off[i]), "head_piece_bit"));
         } else if b.states.get("upper_block_bit").and_then(n) == Some(0) {

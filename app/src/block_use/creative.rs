@@ -209,8 +209,8 @@ fn advance_catalog(player: &mut client_state::PlayerRuntime, pending: &mut Pendi
     }
 }
 
-/// A planned double slab is built from the full block drawn the same way, such as dark oak
-/// planks for a dark oak double slab; every other offer is kept.
+/// Plan preparatory item uses without substituting a different finished block.
+/// A double slab needs a single slab first, then a second use on that slab.
 pub(super) fn full_block_offer(
     collisions: &PhysicsCollisionRegistries,
     stream: &chunk_pipeline::WorldStream,
@@ -218,6 +218,50 @@ pub(super) fn full_block_offer(
     survival: bool,
 ) -> mod_host::CreativePlacementOffer {
     let mode = stream.network_id_mode();
+    if offer.name.ends_with("_candle_cake") {
+        let world = PaletteWorld::new(
+            stream.collision_store(),
+            collisions.registry(mode),
+            stream.current_dimension(),
+            Default::default(),
+        );
+        let current = world
+            .primary_runtime_id(offer.position)
+            .ok()
+            .and_then(|id| collisions.block_identifier(mode, id));
+        if current != Some("minecraft:cake") && current != Some(offer.name.as_str()) {
+            if let Some(id) = collisions.block_default_runtime_id(mode, "minecraft:cake") {
+                offer.name = "minecraft:cake".into();
+                offer.states = collisions
+                    .block_canonical_state(mode, id)
+                    .unwrap_or("{}")
+                    .to_owned();
+            }
+        }
+    }
+    if offer.name == "minecraft:daylight_detector_inverted" {
+        let world = PaletteWorld::new(
+            stream.collision_store(),
+            collisions.registry(mode),
+            stream.current_dimension(),
+            Default::default(),
+        );
+        let current = world
+            .primary_runtime_id(offer.position)
+            .ok()
+            .and_then(|id| collisions.block_identifier(mode, id));
+        if current != Some("minecraft:daylight_detector") && current != Some(offer.name.as_str()) {
+            if let Some(id) =
+                collisions.block_default_runtime_id(mode, "minecraft:daylight_detector")
+            {
+                offer.name = "minecraft:daylight_detector".into();
+                offer.states = collisions
+                    .block_canonical_state(mode, id)
+                    .unwrap_or("{}")
+                    .to_owned();
+            }
+        }
+    }
     if survival
         && matches!(
             offer.name.as_str(),
@@ -233,26 +277,29 @@ pub(super) fn full_block_offer(
             return offer;
         }
     }
-    let full = collisions
-        .block_default_runtime_id(mode, &offer.name)
-        .and_then(|slab| {
-            gameplay::placement_items::double_slab_full_block(
-                collisions,
-                stream.runtime_assets(),
-                mode,
-                slab,
-            )
-        })
-        .and_then(|block| {
-            Some((
-                collisions.block_identifier(mode, block)?,
-                collisions.block_canonical_state(mode, block)?,
-            ))
-        });
-    if let Some((name, states)) = full {
-        bevy::log::debug!(planned = %offer.name, full = name, "Fast Place builds a double slab as its full block");
-        offer.name = name.to_owned();
-        offer.states = states.to_owned();
+    if let Some(single) =
+        gameplay::placement_items::single_slab_for_double(collisions, mode, &offer.name)
+    {
+        let world = PaletteWorld::new(
+            stream.collision_store(),
+            collisions.registry(mode),
+            stream.current_dimension(),
+            Default::default(),
+        );
+        let already_single = world
+            .primary_runtime_id(offer.position)
+            .ok()
+            .and_then(|id| collisions.block_identifier(mode, id))
+            == Some(single.as_str());
+        if !already_single {
+            if let Some(id) = collisions.block_default_runtime_id(mode, &single) {
+                offer.states = collisions
+                    .block_canonical_state(mode, id)
+                    .unwrap_or("{}")
+                    .to_owned();
+                offer.name = single;
+            }
+        }
     }
     offer
 }
@@ -289,7 +336,15 @@ pub(super) fn find_materials<'a>(
     selected: u8,
 ) -> Materials<'a> {
     let mode = stream.network_id_mode();
-    let item_block = gameplay::placement_items::standing_form(collisions, mode, &offer.name)
+    let item_block = offer
+        .name
+        .strip_suffix("_cake")
+        .filter(|_| offer.name.ends_with("_candle_cake"))
+        .map(str::to_owned)
+        .or_else(|| {
+            gameplay::placement_items::single_slab_for_double(collisions, mode, &offer.name)
+        })
+        .or_else(|| gameplay::placement_items::standing_form(collisions, mode, &offer.name))
         .unwrap_or_else(|| offer.name.clone());
     let quality = |stack: &NetworkItemStack| {
         if let Some(aux) = material_aux(offer)
@@ -437,7 +492,7 @@ pub(super) fn try_start(
             policy.recent.remove(0);
         }
     }
-    if interacting {
+    if interacting && !offer.name.ends_with("_candle_cake") {
         policy.pending = Some(Pending {
             interacting: true,
             game_mode,
@@ -483,10 +538,11 @@ pub(super) fn try_start(
                 .collisions
                 .block_canonical_state(mode, observed.target.runtime_id),
         ));
-    let select_only = observed.target.face > 5
-        || (!use_air
-            && !replacing_plant
-            && placement_cell(observed.target.position, observed.target.face) != offer.position);
+    let select_only = !interacting
+        && (observed.target.face > 5
+            || (!use_air
+                && !replacing_plant
+                && placement_cell(observed.target.position, observed.target.face) != offer.position));
     if select_only {
         bevy::log::info!(
             ghost = ?offer.position,
@@ -587,7 +643,7 @@ pub(super) fn try_start(
     bevy::log::debug!(block = %offer.name, slot, ?request, ?catalog, ?game_mode, item_network_id = key.0,
         metadata = key.1, item_block_runtime_id = key.2, "Fast Place waiting for inventory and selection");
     policy.pending = Some(Pending {
-        interacting: false,
+        interacting,
         game_mode,
         offer,
         support: support(observed),
@@ -735,7 +791,9 @@ pub(super) fn resume(
         policy.pending = Some(pending);
         return true;
     }
-    if !pending.interacting && ledger.backing_stack(pending.slot).map(key) != Some(pending.key) {
+    if (!pending.interacting || pending.key != (0, 0, 0))
+        && ledger.backing_stack(pending.slot).map(key) != Some(pending.key)
+    {
         movement.end_placement_facing();
         bevy::log::info!(block = %pending.offer.name, slot = pending.slot, "Fast Place inventory did not confirm the requested block");
         return true;

@@ -292,7 +292,13 @@ impl MeshBuilder {
                 colors[corner][2] * light * tint[2],
                 colors[corner][3],
             ],
-            normal,
+            normal: if self.actor_light & (1 << 28) != 0 {
+                // A ghost does not use actor lighting. Reuse its normal words
+                // for quad coordinates, avoiding a larger vertex buffer format.
+                [[0., 0., 0.], [1., 0., 0.], [1., 1., 0.], [0., 1., 0.]][corner]
+            } else {
+                normal
+            },
             actor_light: if self.actor_light == 0 {
                 0
             } else {

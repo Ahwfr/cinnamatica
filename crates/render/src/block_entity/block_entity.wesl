@@ -29,6 +29,7 @@ struct VertexOutput {
     @location(5) @interpolate(flat) beam_tile: vec2<f32>,
     // Negative where an entity-lit face points away from the camera.
     @location(6) facing: f32,
+    @location(7) quad_coord: vec2<f32>,
 }
 
 fn vertex_f32(index: u32) -> f32 { return bitcast<f32>(vertex_words[index]); }
@@ -58,8 +59,10 @@ fn block_vertex(vertex_index: u32, overlay_bias: bool) -> VertexOutput {
     let beam = actor_light == 0xffffffffu;
     out.actor_light = select(actor_light & ~BLOCK_ENTITY_CULL_BACK_FACES, 0u, beam);
     out.beam_tile = select(vec2(0.0), normal.xy, beam);
-    out.native_lighting = actor_lighting(out.actor_light, normal, 0.0);
-    let geometric = !beam && (actor_light & BLOCK_ENTITY_CULL_BACK_FACES) != 0u;
+    let ghost = !beam && (actor_light & 0x10000000u) != 0u;
+    out.quad_coord = select(vec2(0.5), normal.xy, ghost);
+    out.native_lighting = actor_lighting(select(out.actor_light, 0u, ghost), normal, 0.0);
+    let geometric = !beam && !ghost && (actor_light & BLOCK_ENTITY_CULL_BACK_FACES) != 0u;
     out.facing = select(1.0, dot(view.world_position - position, normal), geometric);
     return out;
 }
@@ -132,6 +135,7 @@ fn selection_line_fragment(input: SelectionLineOutput) -> @location(0) vec4<f32>
 @fragment
 fn block_entity_solid(input: VertexOutput) -> @location(0) vec4<f32> {
     var texel = textureSample(atlas, atlas_sampler, input.uv);
+    let ghost_edges = ghost_line(input);
     @if(ALPHA_TO_COVERAGE)
     let cutout = cutout_alpha_2d(atlas, input.uv, dpdx(input.uv), dpdy(input.uv), texel, BLOCK_ENTITY_ALPHA_THRESHOLD);
     @if(ALPHA_TO_COVERAGE)
@@ -147,6 +151,10 @@ fn block_entity_solid(input: VertexOutput) -> @location(0) vec4<f32> {
     // Keep derivative-dependent sampling uniform before rejecting a geometric back face.
     if (input.facing < 0.0) {
         discard;
+    }
+    let ghost = ghost_colour(input, texel.rgb * input.color.rgb, ghost_edges);
+    if ((input.actor_light & 0x10000000u) != 0u) {
+        return vec4(ghost, coverage);
     }
     if (input.actor_light != 0u) {
         // Native mob_head:entity_alphatest uses Fancy world-normal shading and
@@ -166,11 +174,30 @@ fn block_entity_overlay(input: VertexOutput) -> @location(0) vec4<f32> {
     let uv_dy = dpdy(uv);
     if (input.uv.x < 0.0) { return input.color; }
     let texel = textureSampleGrad(atlas, atlas_sampler, uv, uv_dx, uv_dy);
+    let ghost_edges = ghost_line(input);
     let alpha = texel.a * input.color.a;
     if (alpha < 0.02) {
         discard;
     }
-    return vec4(texel.rgb * input.color.rgb, alpha);
+    return vec4(ghost_colour(input, texel.rgb * input.color.rgb, ghost_edges), alpha);
+}
+
+// RGB565 wash and 8-bit strength occupy scalar ghost light words only.
+// Quad UV derivatives keep the outline thin in pixels at every model size.
+fn ghost_line(input: VertexOutput) -> f32 {
+    let edge = min(input.quad_coord, vec2(1.0) - input.quad_coord);
+    let pixels = edge / max(fwidth(input.quad_coord), vec2(0.00001));
+    return (1.0 - smoothstep(0.4, 1.0, min(pixels.x, pixels.y)))
+        * select(0.0, 1.0, (input.actor_light & 0x08000000u) != 0u);
+}
+
+fn ghost_colour(input: VertexOutput, colour: vec3<f32>, line: f32) -> vec3<f32> {
+    let packed = input.actor_light;
+    let wash = vec3(f32((packed >> 11u) & 31u) / 31.0,
+        f32((packed >> 5u) & 63u) / 63.0, f32(packed & 31u) / 31.0);
+    let amount = f32((packed >> 16u) & 255u) / 255.0;
+    let washed = mix(mix(colour, wash, amount), vec3(0.08, 0.72, 1.0), line);
+    return select(colour, washed, (packed & 0x10000000u) != 0u);
 }
 
 @fragment

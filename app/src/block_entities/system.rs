@@ -767,7 +767,7 @@ pub(crate) fn update_block_entity_scene(
         };
         runtime
             .hologram
-            .gather(&mod_scene.retained, dimension, occupied, &mut pieces);
+            .gather(&mod_scene.retained, dimension, eye, occupied, &mut pieces);
     }
     for drawn in &pieces {
         let at = drawn.at;
@@ -776,9 +776,11 @@ pub(crate) fn update_block_entity_scene(
         }
         let kind = drawn.piece.kind();
         // A ghost is washed light blue like the blocks of the hologram around it.
-        let light = BlockEntityLight::Tinted {
-            value: 1.,
+        let light = BlockEntityLight::Ghost {
             tint: drawn.tint,
+            wash: drawn.wash,
+            amount: drawn.amount,
+            outline: drawn.outline,
         };
         submissions.push(BlockEntitySubmission {
             block: at,

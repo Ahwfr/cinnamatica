@@ -81,6 +81,11 @@ pub fn resolve_placement_state(
         set_bit(&mut states, P::Lit.name(), false)?;
     } else if fact.placement == R::Axis
         && (only_keys(&states, &[P::PillarAxis.name()])
+            || (states.contains_key("creaking_heart_state")
+                && only_keys(
+                    &states,
+                    &[P::PillarAxis.name(), "creaking_heart_state", "natural"],
+                ))
             || (only_keys(&states, &[P::PillarAxis.name(), P::Deprecated.name()])
                 && value(&states, P::Deprecated.name())?.as_i64() == Some(0)))
     {

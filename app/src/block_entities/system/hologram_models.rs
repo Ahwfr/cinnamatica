@@ -42,6 +42,26 @@ pub(super) fn piece(name: &str, states: &str) -> Option<Piece> {
         }),
         R::DecoratedPot => Piece::Pot(super::facing(states).unwrap_or(Facing::North)),
         R::Conduit => Piece::Conduit,
+        R::ItemFrame | R::GlowItemFrame => Piece::Frame(render_model::ItemFrameModel {
+            glow: entry.renderer == R::GlowItemFrame,
+            outward: state.int("facing_direction").unwrap_or(2).clamp(0, 5) as u8,
+            full_face: ["item_frame_map_bit", "item_frame_photo_bit"]
+                .iter()
+                .any(|key| state.int(key).is_some_and(|value| value != 0)),
+            map: None,
+        }),
+        // Block grids currently carry states, not tile-entity NBT. Use the actual
+        // default model; unknown text, size and pose must not become an oak cube.
+        R::Chalkboard => Piece::Chalkboard(render_model::ChalkboardModel {
+            size: assets::block_entity_geometry::chalkboard::ChalkboardSize::Small,
+            direction: state.int("direction").unwrap_or(0).rem_euclid(16) as u8,
+            on_ground: true,
+        }),
+        R::Statue => Piece::Statue(render_model::StatueModel {
+            pose: render_model::StatuePose::Standing,
+            oxidation: render_model::Oxidation::from_block_name(name)?,
+            facing: super::facing(states).unwrap_or(Facing::North),
+        }),
         R::Bell => Piece::Bell(
             state
                 .text("attachment")
@@ -87,6 +107,9 @@ impl Piece {
                 ring_direction: 0,
                 seconds_since_ring: 1000.,
             }),
+            Self::Frame(model) => BlockEntityKind::ItemFrame(model),
+            Self::Chalkboard(model) => BlockEntityKind::Chalkboard(model),
+            Self::Statue(model) => BlockEntityKind::Statue(model),
         }
     }
 }

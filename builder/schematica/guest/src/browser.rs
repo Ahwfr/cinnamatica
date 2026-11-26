@@ -934,6 +934,45 @@ mod layout {
         }
 
         nodes.extend(group("behavior", "Behavior", [214., 110.], [234., 194.]));
+        let range = controls.push(json!({"kind":"slider","id":"render-radius",
+            "label":"Ghost render radius","value":512,"min":16,"max":512,"step":16}));
+        nodes.push(named(
+            "render_radius_label",
+            bind(
+                text("Render range", [198., 10.], [242., 154.], TEXT, "left"),
+                "#bw_range",
+                "#text",
+            ),
+        ));
+        let mut track = panel(
+            vec![
+                named("bar", rect([124., 3.], [0., 7.], BORDER, 0.)),
+                named(
+                    "thumb",
+                    bind(
+                        rect([6., 16.], [0., 0.], TEXT, 0.),
+                        "#bw_range_x",
+                        "#offset_x",
+                    ),
+                ),
+            ],
+            [124., 18.],
+            [242., 169.],
+        );
+        track["type"] = json!("button");
+        track["button_mappings"] = json!([{"from_button_id":"button.menu_select",
+            "to_button_id":format!("mod.axis:{range}:x"),"mapping_type":"pressed"}]);
+        nodes.push(named("render_radius", track));
+        nodes.push(named(
+            "render_all",
+            plain(
+                controls,
+                "render-all",
+                "Render all",
+                [70., 18.],
+                [372., 168.],
+            ),
+        ));
         for (line, key) in ["remember-placement", "auto-layer", "paste-destroy"]
             .into_iter()
             .enumerate()
@@ -1259,6 +1298,12 @@ impl Viewer {
             self.browser_tab = tab;
         } else if let Some(key) = id.strip_prefix(SETTING_PREFIX) {
             self.browser_setting(key, value >= 0.5);
+        } else if id == "render-radius" {
+            self.options.render_radius = ((value.clamp(16., 512.) / 16.).round() as u16) * 16;
+            self.options.save();
+        } else if id == "render-all" {
+            self.options.render_radius = 0;
+            self.options.save();
         } else if id == "bw-export" {
             self.export_button();
         } else if id == MODE_ID {
@@ -1376,7 +1421,11 @@ impl Viewer {
             // cells known to be missing showed 0 for blocks in unloaded or unchecked parts
             // of the guide.
             let left: [Option<u64>; ROWS] = std::array::from_fn(|row| {
-                materials[row].map(|index| self.materials[index].total.saturating_sub(counts.built[row]))
+                materials[row].map(|index| {
+                    self.materials[index]
+                        .total
+                        .saturating_sub(counts.built[row])
+                })
             });
             for (row, line) in materials.iter().enumerate() {
                 if let (Some(index), Some(value)) = (line, left[row]) {
@@ -1404,7 +1453,10 @@ impl InventoryCache {
     /// Fills the cache without the host, and keeps it from being read again.
     #[cfg(test)]
     pub(crate) fn set_for_test(&mut self, counts: &[(&str, u32)]) {
-        self.counts = counts.iter().map(|(name, count)| ((*name).to_owned(), *count)).collect();
+        self.counts = counts
+            .iter()
+            .map(|(name, count)| ((*name).to_owned(), *count))
+            .collect();
         self.calls = 1;
     }
 }
@@ -1416,7 +1468,9 @@ pub(crate) fn item_for_block(block: &str) -> String {
     let item = match name {
         "farmland" | "grass_path" => "dirt",
         "sweet_berry_bush" => "sweet_berries",
-        "cave_vines" | "cave_vines_body_with_berries" | "cave_vines_head_with_berries" => "glow_berries",
+        "cave_vines" | "cave_vines_body_with_berries" | "cave_vines_head_with_berries" => {
+            "glow_berries"
+        }
         "pitcher_crop" => "pitcher_pod",
         "reeds" => "sugar_cane",
         "redstone_wire" => "redstone",
@@ -1446,7 +1500,11 @@ pub(crate) fn item_for_block(block: &str) -> String {
 fn read_inventory() -> Option<std::collections::HashMap<String, u32>> {
     let equipment = crate::player_state::read_equipment().ok().flatten()?;
     let mut counts = std::collections::HashMap::new();
-    for slot in equipment.inventory.iter().chain(std::iter::once(&equipment.offhand)) {
+    for slot in equipment
+        .inventory
+        .iter()
+        .chain(std::iter::once(&equipment.offhand))
+    {
         if let Some(item) = &slot.item
             && let Some(identifier) = &item.identifier
         {
@@ -1471,7 +1529,11 @@ impl Viewer {
             cache.counts = counts;
         }
         cache.calls = cache.calls.wrapping_add(1);
-        cache.counts.get(&item_for_block(block)).copied().unwrap_or(0)
+        cache
+            .counts
+            .get(&item_for_block(block))
+            .copied()
+            .unwrap_or(0)
     }
 }
 
@@ -1601,7 +1663,11 @@ fn materials(viewer: &Viewer, out: &mut Map<String, Value>) {
             format!("#bw_row{row}_needed"),
             json!(needed.map_or_else(
                 || if line.is_some() { "…" } else { "" }.into(),
-                |needed| if needed == 0 { "Done".into() } else { needed.to_string() }
+                |needed| if needed == 0 {
+                    "Done".into()
+                } else {
+                    needed.to_string()
+                }
             )),
         );
         out.insert(
@@ -1767,6 +1833,23 @@ fn keys(viewer: &Viewer, out: &mut Map<String, Value>) {
 }
 
 fn settings(viewer: &Viewer, out: &mut Map<String, Value>, controls: &mut Vec<Value>) {
+    let radius = viewer.options.render_radius;
+    out.insert(
+        "#bw_range".into(),
+        json!(if radius == 0 {
+            "Render range: All".to_owned()
+        } else {
+            format!("Render range: {radius} blocks")
+        }),
+    );
+    out.insert(
+        "#bw_range_x".into(),
+        json!(
+            (f32::from(if radius == 0 { 512 } else { radius }).clamp(16., 512.) - 16.) / 496.
+                * 118.
+        ),
+    );
+    controls.push(json!({"id":"render-radius","value":if radius == 0 { 512 } else { radius }}));
     out.insert("#bw_set_title".into(), json!("Settings"));
     out.insert("#bw_set_summary".into(), json!("Saves immediately"));
     out.insert(
@@ -1887,14 +1970,23 @@ mod tests {
     #[test]
     fn wide_material_list_prepares_in_small_batches_without_losing_rows() {
         let mut viewer = crate::tests::reference_viewer();
-        viewer.materials = (0..1024).rev().map(|index| crate::MaterialLine {
-            name: format!("minecraft:material_{index:04}"), total: 1, missing: 1,
-        }).collect();
+        viewer.materials = (0..1024)
+            .rev()
+            .map(|index| crate::MaterialLine {
+                name: format!("minecraft:material_{index:04}"),
+                total: 1,
+                missing: 1,
+            })
+            .collect();
         for prepared in 1..=128 {
             let rows = viewer.browser_materials();
-            assert_eq!(viewer.browser_names.borrow().as_ref().unwrap().1.len(), prepared * 8);
-            if prepared < 128 { assert!(rows.is_empty()); }
-            else {
+            assert_eq!(
+                viewer.browser_names.borrow().as_ref().unwrap().1.len(),
+                prepared * 8
+            );
+            if prepared < 128 {
+                assert!(rows.is_empty());
+            } else {
                 assert_eq!(rows.len(), 1024);
                 assert!(rows.windows(2).all(|pair| pair[0].1 <= pair[1].1));
             }
@@ -2024,7 +2116,7 @@ mod tests {
         viewer.browser_event(Tab::Settings.id(), 1.);
         let mut controls = Vec::new();
         bindings(&viewer, &mut Map::new(), &mut controls);
-        assert_eq!(controls.len(), SETTINGS.len());
+        assert_eq!(controls.len(), SETTINGS.len() + 1); // switches plus render radius
         for (key, _) in SETTINGS {
             let id = format!("{SETTING_PREFIX}{key}");
             let on = viewer.browser_setting_state(key);

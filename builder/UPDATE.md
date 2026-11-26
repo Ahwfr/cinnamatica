@@ -1,5 +1,12 @@
 # Installing and updating Builder
 
+0.3.68 updates the client, importer and guest together. Keep the entire portable
+App folder with the launcher. Existing worlds, library slots and placements stay
+compatible. The test catalogue is corrected in place, without moving its stations.
+Settings adds Ghost render range and Render all (the default). See
+BLOCK-COVERAGE-0.3.68.md before interpreting the block catalogue as a Survival
+placement guarantee. No Windows installer is published by this local update.
+
 0.3.67 updates the native client to remove a separate entity-ghost distance cutoff.
 The local test catalogue is regenerated without internal registry placeholders.
 All existing library entries and the saved placement of test are preserved.

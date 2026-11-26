@@ -114,6 +114,25 @@ pub fn routed_item_block(
     collisions.block_default_runtime_id(mode, identifier)
 }
 
+/// The actual inventory item used twice to build a registered double slab.
+pub fn single_slab_for_double(
+    collisions: &PhysicsCollisionRegistries,
+    mode: NetworkIdMode,
+    name: &str,
+) -> Option<String> {
+    let double = collisions.block_default_runtime_id(mode, name)?;
+    if collisions.block_facts(mode, double).placement != PlacementRule::DoubleSlab {
+        return None;
+    }
+    let candidate = if name.contains("_double_slab") {
+        name.replace("_double_slab", "_slab")
+    } else {
+        name.replacen("double_", "", 1)
+    };
+    let single = collisions.block_default_runtime_id(mode, &candidate)?;
+    (collisions.block_facts(mode, single).placement == PlacementRule::Slab).then_some(candidate)
+}
+
 /// The full block drawn exactly like the double slab `double_slab`, such as dark oak planks for
 /// a dark oak double slab. Candidates are full cubes with the same six face materials that are
 /// not slabs themselves. The pick is the name made most of the slab's material, so stone wins

@@ -140,6 +140,7 @@ impl Specializer<RenderPipeline> for Specialization {
 struct Shading {
     tint: bevy::math::Vec4,
     wash: bevy::math::Vec4,
+    range: bevy::math::Vec4,
 }
 
 impl Shading {
@@ -147,6 +148,7 @@ impl Shading {
     const NEUTRAL: Self = Self {
         tint: bevy::math::Vec4::ONE,
         wash: bevy::math::Vec4::ZERO,
+        range: bevy::math::Vec4::ZERO,
     };
 
     /// Reads the validated tint and wash parameters of one placement.
@@ -156,6 +158,12 @@ impl Shading {
         let amount = instance.params[BLOCK_GRID_WASH_PARAM];
         Self {
             tint: bevy::math::Vec4::from_array(instance.tint),
+            range: bevy::math::Vec4::new(
+                instance.params[mod_api::drawing::BLOCK_GRID_RADIUS_PARAM].max(0.),
+                0.,
+                0.,
+                0.,
+            ),
             // An unused colour is irrelevant, so keep it out of placement comparisons.
             wash: if amount > 0. {
                 bevy::math::Vec4::new(colour[0], colour[1], colour[2], amount)
@@ -167,7 +175,7 @@ impl Shading {
 
     /// Whether the fragment colour changes, which needs the tint shader variant.
     fn recolours(&self) -> bool {
-        self.tint.truncate() != bevy::math::Vec3::ONE || self.wash.w > 0.
+        self.tint.truncate() != bevy::math::Vec3::ONE || self.wash.w > 0. || self.range.x > 0.
     }
 
     /// Whether the placement blends with what is behind it instead of writing depth.

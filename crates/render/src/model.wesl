@@ -923,9 +923,9 @@ fn fragment(
 
 fn tint_model_face(colour: vec4<f32>, in: VertexOutput) -> vec4<f32> {
     @if(MOD_BLOCK_OUTLINE)
-    return apply_shape_tint(colour, in.outline_edges);
+    return apply_shape_tint(colour, in.outline_edges, in.world_position - view.world_position);
     @if(!MOD_BLOCK_OUTLINE)
-    return apply_shape_tint(colour, vec4(1.0));
+    return apply_shape_tint(colour, vec4(1.0), in.world_position - view.world_position);
 }
 
 @fragment

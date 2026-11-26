@@ -360,9 +360,9 @@ fn prepare(
                 && (!(expected.correct_aim || expected.strict_state)
                     || super::orientation::reported_facing_matches(expected, attempt.view.rotation()));
             let supported_door = placement.is_none()
-                && (expected.name.ends_with("_door") || expected.name == "minecraft:bed")
+                && (expected.name.ends_with("_door") || matches!(expected.name.as_str(), "minecraft:bed" | "minecraft:straw_bed"))
                 && (!(expected.strict_state || expected.correct_aim)
-                    || if expected.name == "minecraft:bed" {
+                    || if matches!(expected.name.as_str(), "minecraft:bed" | "minecraft:straw_bed") {
                         super::orientation::wanted_quadrant(expected)
                             == Some(super::orientation::look_quadrant(attempt.view.rotation()))
                     } else { super::orientation::door_matches_facing(expected, attempt.view.rotation()) })

@@ -2869,3 +2869,11 @@ chat/forms, resource packs, and an offline local world followed by reload. Requi
 platform, parity and performance evidence must be complete for the claimed release scope.
 Keep the completion ledger consistent with this checklist; no historical green test
 or isolated fix silently completes the surrounding gate.
+
+## Cinnamatica acceptance gaps
+
+- [ ] Complete arbitrary-height/unsupported placement, legacy block models, native
+  entity-heavy guide coverage and shader-pack styling against the evidence and
+  checklist in [the Builder coverage report](builder/BLOCK-COVERAGE-0.3.68.md).
+  CPU shader validation and bounded WASM switching are covered; integrated live
+  GPU and every-block multiplayer parity remain incomplete.

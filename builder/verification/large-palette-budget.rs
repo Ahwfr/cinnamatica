@@ -129,6 +129,13 @@ fn main() {
         host.frame_with_controls(false, Some(snapshot), keys)
             .unwrap_or_else(|e| panic!("frame {} button {:?}: {e:?}", tick.get() + 1, button));
         tick.set(tick.get() + 1);
+        for resources in &host.render().0.retained {
+            for geometry in resources.geometry.values() {
+                if let Some(blocks) = geometry.blocks() {
+                    blocks.accept_status(blocks.grid.revision, Ok(()));
+                }
+            }
+        }
         assert!(
             !host.is_recovering(),
             "guest ran out of fuel at frame {} button {:?}",
@@ -186,6 +193,61 @@ fn main() {
     host.set_panel_open(false);
     for _ in 0..3000 {
         frame(&mut host, true, None, None);
+    }
+    if std::env::args().nth(2).as_deref() == Some("--switch") {
+        for index in [1, 0, 1, 0] {
+            host.set_panel_open(true);
+            frame(&mut host, false, None, Some("bw-tab-import"));
+            frame(&mut host, false, None, Some(&format!("toggle-{index}")));
+            host.set_panel_open(false);
+            for _ in 0..900 {
+                frame(&mut host, true, None, None);
+            }
+            let volumes: Vec<_> = host
+                .render()
+                .0
+                .retained
+                .iter()
+                .flat_map(|r| r.geometry.values())
+                .filter_map(|g| g.blocks())
+                .map(|b| b.grid.size.iter().copied().product::<u32>())
+                .collect();
+            assert!(
+                volumes
+                    .iter()
+                    .any(|&n| if index == 0 { n >= 10_000 } else { n < 10_000 }),
+                "Switch to library entry {index} did not finish: {volumes:?}"
+            );
+        }
+        println!("Large/small library switching completed four times with normal fuel.");
+        host.set_panel_open(true);
+        frame(&mut host, false, None, Some("bw-tab-settings"));
+        let mut controls = empty_controls();
+        controls.focused = true;
+        controls.panel_open = true;
+        controls.events.push(ControlEvent {
+            id: "render-radius".into(),
+            value: 64.,
+        });
+        host.frame_with_controls(false, None, controls).unwrap();
+        frame(&mut host, false, None, None);
+        assert!(
+            format!(
+                "{:?}",
+                host.panel().unwrap().surface.bindings.get("#bw_range")
+            )
+            .contains("64 blocks")
+        );
+        frame(&mut host, false, None, Some("render-all"));
+        frame(&mut host, false, None, None);
+        assert!(
+            format!(
+                "{:?}",
+                host.panel().unwrap().surface.bindings.get("#bw_range")
+            )
+            .contains("All")
+        );
+        assert!(host.panel_open() && !host.is_recovering());
     }
     println!(
         "Large-guide verification and Materials callbacks completed without restarting the guest."

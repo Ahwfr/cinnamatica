@@ -1,5 +1,24 @@
 # Large-palette WASM regression probe
 
+## Ghost shaders and switching
+
+`ghost-shaders.rs` composes the production terrain/model/liquid shaders with
+outline, tint and opacity variants, and the native entity shader with and without
+alpha-to-coverage. Link the matching cached `assets`, `meshing`, `render_api`,
+`render_model`, `naga`, `wesl`, `wgpu`, `far_terrain` and `block_transform` rlibs.
+Run it from the source checkout. It validates WGSL with Naga; it does not render
+pixels or certify custom shader packs.
+
+`large-palette-budget.rs COMPONENT --switch` additionally expects a small entry
+in slot 1. It switches 0/1 four times, checks Settings render-radius changes and
+Render all, and retains the normal 1,000,000-fuel callbacks. The old 0.3.67 guest
+traps while dropping the large palette; the bounded teardown in 0.3.68 passes.
+
+For standalone tools mixing native non-LTO libraries with the dependency-free
+core, compile core/src/lib.rs to a plain rlib with the pinned compiler. Do not
+force whole-program LTO over the native client's libraries to link the core's
+Cargo release bitcode.
+
 ## Complete block catalogue
 
 `block-catalogue.rs` generates `test.scb`, `blocks.json` and `README.txt` in its

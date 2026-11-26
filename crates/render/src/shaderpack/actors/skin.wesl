@@ -329,7 +329,7 @@ fn convert_block_entities(
         ), vec4(midpoint, midpoint)).xy;
     }
     let face = cross(positions[2] - positions[0], positions[1] - positions[0]);
-    if (beam || dot(normal, normal) < 1e-6) {
+    if (beam || (actor_light & 0x10000000u) != 0u || dot(normal, normal) < 1e-6) {
         normal = select(vec3(0.0, 1.0, 0.0), normalize(face), dot(face, face) > 1e-12);
     }
     normal = normalize(normal);

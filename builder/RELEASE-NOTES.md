@@ -1,3 +1,11 @@
+# Cinnamatica 0.3.68
+
+- Fix reproduced guest fuel exhaustion when switching large schematics by retiring their state maps in bounded callbacks.
+- Handle stale Windows monitor handles without panicking, retaining the pinned dependency's mobile patches and license.
+- Correct catalogue glazed/head/stem states and pair straw beds. Prepare real two-use double slabs, cake-plus-candle placement, detector inversion, heart axes and straw-bed placement paths.
+- Draw frames/chalkboards/statues using native models. Add native-model ghost wash and thin outlines, plus a 16–512-block render-radius slider and Render all.
+- See BLOCK-COVERAGE-0.3.68.md for evidence, the in-game checklist and explicitly unfinished placement/rendering issues. This is not a claim of universal unsupported air placement.
+
 # Cinnamatica 0.3.67
 
 - Correct the generated test catalogue: exclude internal registry placeholders, retaining all 1,312 Minecraft block identifiers and isolated sample spacing. The earlier inclusion of cinnabar:reserved caused the full native mesh to fail and fall back to a nearby window.

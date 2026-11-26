@@ -1,6 +1,42 @@
 use super::*;
 
 #[test]
+fn straw_bed_head_targets_its_foot_after_rotation_and_mirror() {
+    use schematica_core::{BlockState, StateValue};
+    let mut viewer = reference_viewer();
+    viewer.schematic = Schematic::new("Straw bed", [1, 1, 2]);
+    let bed = BlockState::new("minecraft:straw_bed").with(
+        "minecraft:cardinal_direction",
+        StateValue::Str("south".into()),
+    );
+    viewer.schematic.set(
+        [0, 0, 0],
+        bed.clone().with("head_piece_bit", StateValue::Byte(0)),
+    );
+    viewer
+        .schematic
+        .set([0, 0, 1], bed.with("head_piece_bit", StateValue::Byte(1)));
+    for quarter_turns in 0..4 {
+        for mirror in [Mirror::None, Mirror::X, Mirror::Z] {
+            let placement = Placement {
+                origin: [10, 64, 20],
+                quarter_turns,
+                mirror,
+            };
+            viewer.placement = Some(placement);
+            let (base, at) = viewer
+                .placement_block(placement.local_to_world(viewer.schematic.size(), [0, 0, 1]))
+                .unwrap();
+            assert_eq!(
+                at,
+                placement.local_to_world(viewer.schematic.size(), [0, 0, 0])
+            );
+            assert_eq!(base.states["head_piece_bit"], StateValue::Byte(0));
+        }
+    }
+}
+
+#[test]
 fn dragon_outline_encloses_native_model_instead_of_a_small_skull() {
     use schematica_core::{BlockState, StateValue};
     for side in 2..=5 {
@@ -175,6 +211,7 @@ pub(super) fn reference_viewer() -> Viewer {
             tool_item: false,
             bridge_place: true,
             lightness: DEFAULT_LIGHTNESS,
+            render_radius: 0,
             library_revision: 0,
             deleted_entries: Vec::new(),
         },
@@ -224,6 +261,7 @@ fn menu_edits_turn_the_guide_and_select_layer_ranges() {
             tool_item: false,
             bridge_place: true,
             lightness: DEFAULT_LIGHTNESS,
+            render_radius: 0,
             library_revision: 0,
             deleted_entries: Vec::new(),
         },

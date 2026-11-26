@@ -132,6 +132,14 @@ pub enum BlockEntityLight {
     Actor { block: u8, sky: u8 },
     /// Scalar light with a per-channel tint, for a model standing in for a ghost.
     Tinted { value: f32, tint: [f32; 3] },
+    /// Schematic wash, with optional thin model-quad outlines. Packed separately
+    /// from model colour so dark textures and dye colours are washed, not multiplied.
+    Ghost {
+        tint: [f32; 3],
+        wash: [f32; 3],
+        amount: f32,
+        outline: bool,
+    },
 }
 
 impl From<f32> for BlockEntityLight {
@@ -149,6 +157,25 @@ impl BlockEntityLight {
             Self::Tinted { value, tint } => {
                 builder.tint = tint.map(|channel| channel.clamp(0.0, 1.0));
                 (value.clamp(0.0, 1.0), 0)
+            }
+            Self::Ghost {
+                tint,
+                wash,
+                amount,
+                outline,
+            } => {
+                builder.tint = tint;
+                let [r, g, b] = wash.map(|value| value.clamp(0., 1.));
+                let rgb = ((r * 31.).round() as u32) << 11
+                    | ((g * 63.).round() as u32) << 5
+                    | (b * 31.).round() as u32;
+                (
+                    1.,
+                    (1 << 28)
+                        | (u32::from(outline) << 27)
+                        | rgb
+                        | (((amount.clamp(0., 1.) * 255.).round() as u32) << 16),
+                )
             }
         };
     }

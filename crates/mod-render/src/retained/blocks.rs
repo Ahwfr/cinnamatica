@@ -81,6 +81,10 @@ pub fn entity_overlaid(name: &str) -> bool {
                     | R::DecoratedPot
                     | R::Conduit
                     | R::Bell
+                    | R::ItemFrame
+                    | R::GlowItemFrame
+                    | R::Chalkboard
+                    | R::Statue
             )
         })
 }

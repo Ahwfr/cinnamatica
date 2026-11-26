@@ -108,6 +108,10 @@ pub struct Preview {
 }
 
 impl Preview {
+    pub(crate) fn retire(&mut self) -> bool {
+        self.palette.truncate(self.palette.len().saturating_sub(16));
+        self.palette.is_empty()
+    }
     /// The block planned for schematic palette entry `index`.
     pub(crate) fn expected(&self, index: u32) -> Option<&draw::NamedBlock> {
         self.palette.get(index as usize)
@@ -359,6 +363,40 @@ pub(crate) fn flush_batch(remaining: u64, edit_cost: u64) -> usize {
 }
 
 impl WholeGhost {
+    pub(crate) fn set_radius(&mut self, radius: u16) {
+        if let Some(pair) = self.pair.as_mut() {
+            let radius = f32::from(radius);
+            if pair.placement.params[15] != radius {
+                let mut changed = pair.placement.clone();
+                changed.params[15] = radius;
+                if draw::update(pair.instance, &changed).is_ok() {
+                    pair.placement = changed;
+                }
+            }
+        }
+    }
+    /// Terminal release without dropping all canonical strings in one callback.
+    pub(crate) fn retire(&mut self) -> bool {
+        if let Some(pair) = self.pair.take() {
+            pair.remove();
+        }
+        if let Some(pair) = self.retiring.take() {
+            pair.remove();
+        }
+        self.upload_palette
+            .truncate(self.upload_palette.len().saturating_sub(16));
+        if let Some(draw::GeometrySpec::Blocks(grid)) = self.upload.as_mut() {
+            grid.palette.truncate(grid.palette.len().saturating_sub(16));
+            if !grid.palette.is_empty() {
+                return false;
+            }
+        }
+        if !self.upload_palette.is_empty() {
+            return false;
+        }
+        self.clear();
+        true
+    }
     pub fn clear(&mut self) {
         if let Some(pair) = self.pair.take() {
             pair.remove();

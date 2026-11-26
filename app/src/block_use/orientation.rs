@@ -82,6 +82,7 @@ pub(super) fn wanted_face(offer: &CreativePlacementOffer) -> Option<u8> {
     }
     // Wall signs, wall banners and heads face out of the face they are placed against.
     let face_derived = name == "minecraft:hopper"
+        || matches!(name, "minecraft:frame" | "minecraft:glow_frame")
         || name.contains("wall_")
         || name.ends_with("_skull")
         || name.ends_with("_head")
@@ -100,6 +101,9 @@ pub(super) fn wanted_face(offer: &CreativePlacementOffer) -> Option<u8> {
         .map(|face| {
             if name == "minecraft:hopper" {
                 if face < 2 { 1 } else { face ^ 1 }
+            } else if (name.ends_with("_head") || name.ends_with("_skull")) && face < 2 {
+                // Bedrock floor skull state 0 is not a click on a ceiling.
+                1
             } else {
                 face
             }
@@ -126,7 +130,13 @@ pub(super) fn wanted_quadrant(offer: &CreativePlacementOffer) -> Option<usize> {
         return planned_face(&planned)
             .and_then(|face| [2, 5, 3, 4].iter().position(|value| *value == face));
     }
-    if offer.name == "minecraft:bed" {
+    if matches!(offer.name.as_str(), "minecraft:bed" | "minecraft:straw_bed") {
+        if offer.name == "minecraft:straw_bed" {
+            let direction = planned.get("minecraft:cardinal_direction")?["value"].as_str()?;
+            return ["south", "west", "north", "east"]
+                .iter()
+                .position(|candidate| *candidate == direction);
+        }
         return planned.get("direction")?["value"]
             .as_u64()
             .filter(|direction| *direction < 4)
@@ -263,7 +273,10 @@ pub(super) fn correction(
     if context.collisions.block_facts(mode, held).placement
         == assets::facts::PlacementRule::Unresolved
         && !gameplay::placement_items::predicts_named_orientation(&expected.name)
-        && expected.name != "minecraft:bed"
+        && !matches!(
+            expected.name.as_str(),
+            "minecraft:bed" | "minecraft:straw_bed"
+        )
     {
         // Nothing predicts this block's state, but its facing follows the look direction.
         // Turn to the planned facing and keep the support the player already aims at.
@@ -360,7 +373,11 @@ pub(super) fn correction(
     let stair = planned.contains_key("weirdo_direction");
     let planned_upper = planned_upper(&planned);
     let door = expected.name.ends_with("_door");
-    let paired = door || expected.name == "minecraft:bed";
+    let paired = door
+        || matches!(
+            expected.name.as_str(),
+            "minecraft:bed" | "minecraft:straw_bed"
+        );
     let matches = |candidate: &FrozenBlockObservation, view: LocalViewPose| {
         if !support_produces_half(
             planned_upper,
@@ -710,9 +727,9 @@ pub(super) fn air_place_face(offer: &CreativePlacementOffer) -> Option<u8> {
                 | "minecraft:nether_sprouts"
         )
         && !offer.name.ends_with("_door")
-        && offer.name != "minecraft:bed"
+        && !matches!(offer.name.as_str(), "minecraft:bed" | "minecraft:straw_bed")
         && (!(offer.name.ends_with("_head") || offer.name.ends_with("_skull"))
-            || planned_face(&planned) == Some(1))
+            || planned_face(&planned).is_some_and(|face| face < 2))
         && !offer.name.ends_with("_sign")
         && !offer.name.ends_with("_banner")
         && planned_upper(&planned) != Some(true))
@@ -792,6 +809,14 @@ pub(super) fn needs_stack(
     name: Option<&str>,
     states: Option<&str>,
 ) -> bool {
+    if offer.name.contains("double_") && offer.name.ends_with("slab") {
+        let single = if offer.name.contains("_double_slab") {
+            offer.name.replace("_double_slab", "_slab")
+        } else {
+            offer.name.replacen("double_", "", 1)
+        };
+        return name == Some(single.as_str());
+    }
     if name != Some(offer.name.as_str()) {
         return false;
     }
@@ -817,6 +842,22 @@ pub(super) fn needs_toggle(
     actual_name: Option<&str>,
     actual: Option<&str>,
 ) -> bool {
+    if offer.name.ends_with("_candle_cake") && actual_name == Some("minecraft:cake") {
+        return actual
+            .and_then(|state| serde_json::from_str::<serde_json::Value>(state).ok())
+            .is_some_and(|state| state["bite_counter"]["value"].as_u64() == Some(0));
+    }
+    if offer.correct_aim
+        && matches!(
+            offer.name.as_str(),
+            "minecraft:daylight_detector" | "minecraft:daylight_detector_inverted"
+        )
+    {
+        return matches!(
+            actual_name,
+            Some("minecraft:daylight_detector" | "minecraft:daylight_detector_inverted")
+        ) && actual_name != Some(offer.name.as_str());
+    }
     if !offer.correct_aim
         || !offer.name.ends_with("trapdoor")
         || offer.name == "minecraft:iron_trapdoor"

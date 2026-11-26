@@ -35,6 +35,9 @@ pub(super) enum Piece {
     Pot(Facing),
     Conduit,
     Bell(render_model::BellAttachment),
+    Frame(render_model::ItemFrameModel),
+    Chalkboard(render_model::ChalkboardModel),
+    Statue(render_model::StatueModel),
 }
 
 /// A cached model with the drawing instance's current appearance, sampled every frame.
@@ -42,6 +45,9 @@ pub(super) struct DrawPiece {
     pub at: [i32; 3],
     pub piece: Piece,
     pub tint: [f32; 3],
+    pub wash: [f32; 3],
+    pub amount: f32,
+    pub outline: bool,
 }
 
 struct Cached {
@@ -64,6 +70,7 @@ impl HologramPieces {
         &mut self,
         retained: &[Arc<Resources>],
         dimension: i32,
+        eye: Vec3,
         occupied: impl Fn([i32; 3]) -> bool,
         out: &mut Vec<DrawPiece>,
     ) {
@@ -108,7 +115,11 @@ impl HologramPieces {
                     // The hologram takes a while to regenerate after a block lands, so the
                     // client's own world decides at once: a cell that holds a block has its
                     // ghost model dropped without waiting for the hologram.
-                    if !occupied(at) {
+                    let radius = instance.params[mod_api::drawing::BLOCK_GRID_RADIUS_PARAM];
+                    let in_range = radius <= 0.
+                        || (Vec3::from_array(at.map(|x| x as f32 + 0.5)) - eye).length_squared()
+                            <= radius * radius;
+                    if in_range && !occupied(at) {
                         use mod_api::drawing::{
                             BLOCK_GRID_WASH_COLOR_PARAM, BLOCK_GRID_WASH_PARAM,
                         };
@@ -116,13 +127,13 @@ impl HologramPieces {
                         out.push(DrawPiece {
                             at,
                             piece,
-                            tint: std::array::from_fn(|channel| {
-                                instance.tint[channel]
-                                    * (1. - wash
-                                        + wash
-                                            * instance.params
-                                                [BLOCK_GRID_WASH_COLOR_PARAM + channel])
+                            tint: std::array::from_fn(|channel| instance.tint[channel]),
+                            wash: std::array::from_fn(|channel| {
+                                instance.params[BLOCK_GRID_WASH_COLOR_PARAM + channel]
                             }),
+                            amount: wash,
+                            outline: instance.params[mod_api::drawing::BLOCK_GRID_OUTLINE_PARAM]
+                                >= 0.5,
                         });
                     }
                 }

@@ -62,7 +62,7 @@ thread_local! {
     /// Where the guide of a copied selection goes: the box's minimum corner.
     static ADOPT_ORIGIN: Cell<Option<[i32; 3]>> = const { Cell::new(None) };
     static RUNTIME: RefCell<(Runtime, Vec<&'static [u8]>, Options, Option<usize>)> =
-        const { RefCell::new((Runtime::Start, Vec::new(), Options { hold_place: false, placement_lock: false, auto_layer: true, paste_destroy: false, textured: true, target_info: TargetInfo::Off, fast_place: false, strict_place: false, correct_aim: false, bridge_place: true, lightness: DEFAULT_LIGHTNESS, library_revision: 0, deleted_entries: Vec::new(), remember_placement: true, saved_placements: BTreeMap::new(), tool_item: true }, None)) };
+        const { RefCell::new((Runtime::Start, Vec::new(), Options { hold_place: false, placement_lock: false, auto_layer: true, paste_destroy: false, textured: true, target_info: TargetInfo::Off, fast_place: false, strict_place: false, correct_aim: false, bridge_place: true, lightness: DEFAULT_LIGHTNESS, render_radius: 0, library_revision: 0, deleted_entries: Vec::new(), remember_placement: true, saved_placements: BTreeMap::new(), tool_item: true }, None)) };
 }
 
 /// What the "Target info" setting shows for the targeted block.
@@ -151,6 +151,8 @@ struct Options {
     bridge_place: bool,
     /// Percent the ghost blocks blend toward light blue; one of `LIGHTNESS_LEVELS`.
     lightness: u8,
+    /// Zero renders all; otherwise camera radius in blocks. Geometry stays resident.
+    render_radius: u16,
     library_revision: u64,
     deleted_entries: Vec<usize>,
     remember_placement: bool,
@@ -175,6 +177,7 @@ impl Options {
                 "bridge_place": self.bridge_place,
                 "remember_placement": self.remember_placement, "saved_placements": self.saved_placements,
                 "ghost_tint": self.lightness,
+                "render_radius": self.render_radius,
                 "tool_item_enabled": self.tool_item,
                 "library_revision": self.library_revision, "deleted_entries": self.deleted_entries,
             })
@@ -239,6 +242,8 @@ impl Guest for Schematica {
                     .take(blueprint::MAX_LIBRARY)
                     .collect();
                 options.lightness = saved_lightness(&value);
+                options.render_radius =
+                    value["render_radius"].as_u64().unwrap_or(0).min(512) as u16;
                 // Litematica enables the tool item by default.
                 options.tool_item = value["tool_item_enabled"].as_bool().unwrap_or(true);
             });
@@ -288,7 +293,6 @@ impl Guest for Schematica {
                     if let Some(index) = viewer.request {
                         if viewer.release_for_switch() {
                             let _ = hud::set_item_highlights(&[]);
-                            viewer.remember_placement();
                             *options = viewer.options.clone();
                             *active_entry = Some(index);
                             match blueprint::Decoder::new(catalog[index]) {
@@ -299,7 +303,6 @@ impl Guest for Schematica {
                     } else if viewer.adopt.is_some() {
                         if viewer.release_for_switch() {
                             let _ = hud::set_item_highlights(&[]);
-                            viewer.remember_placement();
                             *options = viewer.options.clone();
                             *active_entry = None;
                             let (schematic, totals) = viewer.adopt.take().unwrap();
@@ -488,6 +491,7 @@ struct Viewer {
     library_sizes: Vec<[i32; 3]>,
     active_entry: Option<usize>,
     request: Option<usize>,
+    releasing: bool,
     loaded: bool,
     auto_place: bool,
     dirty: bool,
@@ -582,6 +586,7 @@ impl Viewer {
             highlight_delay: 0,
             active_entry: None,
             request: None,
+            releasing: false,
             loaded,
             auto_place: loaded,
             dirty: false,
@@ -983,6 +988,7 @@ impl Viewer {
                 return;
             }
             let whole = self.whole.active();
+            self.whole.set_radius(self.options.render_radius);
             let tile_lightness = (textured && !whole).then_some(lightness);
             if whole {
                 // One section's boxes and outlines are redrawn per frame, when there is room.
@@ -1336,9 +1342,14 @@ impl Viewer {
             block.states.get("head_piece_bit"),
             Some(StateValue::Bool(true) | StateValue::Byte(1) | StateValue::Int(1))
         ) {
-            let direction = match block.states.get("direction")? {
-                StateValue::Int(value) => usize::try_from(*value).ok()?,
-                _ => return None,
+            let direction = match block.states.get("direction") {
+                Some(StateValue::Int(value)) => usize::try_from(*value).ok()?,
+                _ => match block.states.get("minecraft:cardinal_direction")? {
+                    StateValue::Str(value) => ["south", "west", "north", "east"]
+                        .iter()
+                        .position(|s| *s == value)?,
+                    _ => return None,
+                },
             };
             let offset = *[[0, 0, 1], [-1, 0, 0], [0, 0, -1], [1, 0, 0]].get(direction)?;
             let placement = self.placement?;
@@ -1691,13 +1702,44 @@ impl Viewer {
     }
 
     fn release_for_switch(&mut self) -> bool {
+        if !self.releasing {
+            // Save while the schematic still has its name and full geometry.
+            self.remember_placement();
+            self.releasing = true;
+        }
         self.hot.clear();
         self.hot_dirty.clear();
-        self.whole.clear();
+        let whole_done = self.whole.retire();
+        let preview_done = self.preview.retire();
+        let palette_done = self.schematic.retire_palette(16);
+        self.materials
+            .truncate(self.materials.len().saturating_sub(16));
+        if let Some((_, names)) = self.browser_names.get_mut() {
+            names.truncate(names.len().saturating_sub(16));
+        }
+        let highlights_done = self
+            .highlight_publication
+            .as_mut()
+            .is_none_or(|publication| {
+                publication
+                    .names
+                    .truncate(publication.names.len().saturating_sub(16));
+                publication.names.is_empty()
+            });
         self.retired
             .extend(self.tiles.drain(..).filter(Tile::has_draws));
         self.clear_retired();
         self.retired.is_empty()
+            && whole_done
+            && preview_done
+            && palette_done
+            && highlights_done
+            && self.materials.is_empty()
+            && self
+                .browser_names
+                .get_mut()
+                .as_ref()
+                .is_none_or(|(_, names)| names.is_empty())
     }
 }
 

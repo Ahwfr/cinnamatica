@@ -21,6 +21,7 @@ fn camera_offset_clip(clip_from_world: mat4x4<f32>, camera: vec3<f32>, offset: v
 struct BlockShading {
     tint: vec4<f32>,
     wash: vec4<f32>,
+    range: vec4<f32>,
 }
 
 @if(MOD_BLOCK_TINT || MOD_BLOCK_OPACITY)
@@ -59,7 +60,10 @@ fn quad_border(point: vec3<f32>, corners: array<vec3<f32>, 4>) -> vec4<f32> {
     );
 }
 
-fn apply_shape_tint(colour: vec4<f32>, edges: vec4<f32>) -> vec4<f32> {
+fn apply_shape_tint(colour: vec4<f32>, edges: vec4<f32>, camera_offset: vec3<f32>) -> vec4<f32> {
+    @if(MOD_BLOCK_TINT) {
+        if (block_shading.range.x > 0.0 && length(camera_offset) > block_shading.range.x) { discard; }
+    }
     @if(MOD_BLOCK_TINT && MOD_BLOCK_OUTLINE) {
         let distance_to_edge = min(min(edges.x, edges.y), min(edges.z, edges.w));
         let line = 1.0 - smoothstep(0.005, 0.011, distance_to_edge);
@@ -71,11 +75,11 @@ fn apply_shape_tint(colour: vec4<f32>, edges: vec4<f32>) -> vec4<f32> {
     return colour;
 }
 
-fn apply_block_tint(colour: vec4<f32>, world_position: vec3<f32>) -> vec4<f32> {
+fn apply_block_tint(colour: vec4<f32>, world_position: vec3<f32>, camera: vec3<f32>) -> vec4<f32> {
     @if(MOD_BLOCK_OUTLINE)
-    return apply_shape_tint(colour, vec4(block_grid_edge(world_position)));
+    return apply_shape_tint(colour, vec4(block_grid_edge(world_position)), world_position - camera);
     @if(!MOD_BLOCK_OUTLINE)
-    return apply_shape_tint(colour, vec4(1.0));
+    return apply_shape_tint(colour, vec4(1.0), world_position - camera);
 }
 
 fn apply_block_opacity(colour: vec4<f32>) -> vec4<f32> {

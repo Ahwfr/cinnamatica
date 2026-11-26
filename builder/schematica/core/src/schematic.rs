@@ -79,6 +79,27 @@ impl Schematic {
         &self.palette
     }
 
+    /// Terminal teardown for a metered guest. The caller must stop reading the
+    /// schematic first. Dropping thousands of state maps in one callback traps
+    /// even though loading the same palette was incremental.
+    pub fn retire_palette(&mut self, count: usize) -> bool {
+        if let Some(lookup) = self.lookup.as_mut() {
+            for _ in 0..count {
+                let Some(key) = lookup.keys().next().cloned() else {
+                    break;
+                };
+                lookup.remove(&key);
+            }
+            if !lookup.is_empty() {
+                return false;
+            }
+            self.lookup = None;
+        }
+        self.palette
+            .truncate(self.palette.len().saturating_sub(count));
+        self.palette.is_empty()
+    }
+
     pub fn palette_counts(&self) -> Vec<u64> {
         let mut counts = vec![0; self.palette.len()];
         for &index in &self.blocks {

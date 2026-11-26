@@ -26,6 +26,8 @@ pub const BLOCK_GRID_OUTLINE_PARAM: usize = 10;
 pub const BLOCK_GRID_WASH_PARAM: usize = 11;
 /// First of three parameters holding the wash colour's red, green and blue, each 0..=1.
 pub const BLOCK_GRID_WASH_COLOR_PARAM: usize = 12;
+/// Radius in blocks around the camera. Zero draws the complete retained grid.
+pub const BLOCK_GRID_RADIUS_PARAM: usize = 15;
 /// Optional display-only dye hint for bed/banner named states (0 white .. 15 black).
 /// Entity ghosts consume it; it must never be sent as a server block property.
 pub const BLOCK_DISPLAY_COLOR_STATE: &str = "cinnabar:display_color";
