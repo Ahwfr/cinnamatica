@@ -496,7 +496,7 @@ impl WholeGhost {
                     previous.remove();
                 }
                 self.failed = true;
-                self.error = Some(error.detail);
+                self.error = Some(format!("upload {:?}: {}", error.code, error.detail));
             }
         }
         true
@@ -638,7 +638,7 @@ impl WholeGhost {
             Err(error) if error.code != draw::ErrorCode::BudgetExceeded => {
                 self.clear();
                 self.failed = true;
-                self.error = Some(error.detail);
+                self.error = Some(format!("mesh {:?}: {}", error.code, error.detail));
             }
             _ => {}
         }

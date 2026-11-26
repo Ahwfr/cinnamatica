@@ -1,3 +1,7 @@
+# Cinnamatica 0.3.66
+
+- Show the full-preview failure reason and whether upload or native meshing failed, instead of silently falling back to the nearby verifier window. This is a diagnostic update; it does not yet claim to repair the reported distant disappearance.
+
 # Cinnamatica 0.3.65
 
 - Raise the shared importer/guest palette limit from 1,024 to 4,096 distinct states so a complete block catalogue fits in one schematic. Preserve the embedded library format, eight library slots, volume limits and total decoded-byte budget.

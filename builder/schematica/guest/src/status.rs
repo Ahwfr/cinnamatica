@@ -23,6 +23,14 @@ impl Viewer {
             self.show_label(&text);
             return;
         }
+        if self.whole.failed {
+            if let Some(reason) = &self.whole.error {
+                let message = format!("Full preview unavailable: {reason} | showing nearby blocks");
+                self.hide_debug();
+                self.show_label(&message);
+                return;
+            }
+        }
         if self.options.target_info == TargetInfo::Off {
             self.hide_debug();
             self.show_label("");

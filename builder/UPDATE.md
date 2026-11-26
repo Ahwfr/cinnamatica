@@ -1,5 +1,8 @@
 # Installing and updating Builder
 
+0.3.66 adds explicit full-preview fallback diagnostics using the unchanged native
+runtime. This diagnostic build does not establish a fix for distant visibility.
+
 0.3.65 updates the importer and guest together to accept up to 4,096 distinct
 block states per schematic. It reuses the 0.3.64 native runtime. Existing imported
 libraries stay compatible; decoded byte and volume safeguards are unchanged.
