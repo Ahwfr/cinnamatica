@@ -1,5 +1,10 @@
 # Complete block catalogue and expanded palettes
 
+Correction in 0.3.67: the first generated gallery counted an internal placeholder
+as a block. See `BLOCK-CATALOGUE-FIX-0.3.67.md` for the reproduced native lookup
+failure and the corrected 1,312-Minecraft-identifier gallery. The simulated-ready
+WASM check described below did not certify the native lookup or GPU path.
+
 The importer and guest now accept up to 4,096 palette states per schematic instead
 of 1,024. The existing volume, decoded-byte, embedded-library and native drawing
 limits still apply. A palette entry is a complete block state; rotations can use

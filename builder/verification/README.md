@@ -1,5 +1,24 @@
 # Large-palette WASM regression probe
 
+## Complete block catalogue
+
+`block-catalogue.rs` generates `test.scb`, `blocks.json` and `README.txt` in its
+output directory argument (default `outputs/Latest/Schematics/test`). Link it
+against the matching `assets`, `schematica_core` and `serde_json` libraries with
+the client's pinned Rust toolchain. It derives Minecraft identifiers from the
+pinned registry, excludes non-Minecraft placeholders, preserves isolated sample
+spacing, verifies coverage and round-trips the blueprint. It does not modify an
+installed mod or user library.
+
+`block-catalogue-mesh.rs INPUT.scb` additionally links `gameplay`, `mod_render`
+and `mod_api`. Run from the repository root containing the locally compiled
+carrier at `outputs/Latest/Play/profile/data/assets/compiled/`. It exercises the
+actual client named-state resolver in sequential and hashed modes. A failed mesh
+returns a nonzero exit status. A permissive raw-record lookup is not equivalent:
+it admitted `cinnabar:reserved` in an earlier probe although the client correctly
+excludes that internal placeholder. The native GPU upload is not simulated by this
+CPU mesh check; perform a separate live render check before claiming GPU acceptance.
+
 ## Native placement rule probe
 
 `placement-rules.rs` directly includes the owning gameplay placement modules and

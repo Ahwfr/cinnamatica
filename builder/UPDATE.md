@@ -1,5 +1,9 @@
 # Installing and updating Builder
 
+0.3.67 updates the native client to remove a separate entity-ghost distance cutoff.
+The local test catalogue is regenerated without internal registry placeholders.
+All existing library entries and the saved placement of test are preserved.
+
 0.3.66 adds explicit full-preview fallback diagnostics using the unchanged native
 runtime. This diagnostic build does not establish a fix for distant visibility.
 

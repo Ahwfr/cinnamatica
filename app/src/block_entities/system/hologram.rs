@@ -16,8 +16,6 @@ use render_model::{ChestModel, ChestPair, ChestVariant, Facing, ShulkerModel};
 #[path = "hologram_models.rs"]
 mod models;
 
-/// Pieces farther than this from the eye are not submitted.
-const RADIUS_BLOCKS: f32 = 64.0;
 /// Pieces submitted per frame, nearest-first not guaranteed; keeps a chest warehouse bounded.
 const MAX_PIECES: usize = 768;
 /// Pieces remembered per grid; a grid with more draws only the first of them.
@@ -60,13 +58,12 @@ pub(super) struct HologramPieces {
 }
 
 impl HologramPieces {
-    /// Appends the pieces of every visible grid within range of `eye` to `out`, leaving out
+    /// Appends the pieces of every visible grid to `out`, leaving out
     /// the cells `occupied` reports as holding a block.
     pub(super) fn gather(
         &mut self,
         retained: &[Arc<Resources>],
         dimension: i32,
-        eye: Vec3,
         occupied: impl Fn([i32; 3]) -> bool,
         out: &mut Vec<DrawPiece>,
     ) {
@@ -108,14 +105,10 @@ impl HologramPieces {
                     if out.len() >= MAX_PIECES {
                         break;
                     }
-                    let center =
-                        Vec3::new(at[0] as f32 + 0.5, at[1] as f32 + 0.5, at[2] as f32 + 0.5);
                     // The hologram takes a while to regenerate after a block lands, so the
                     // client's own world decides at once: a cell that holds a block has its
                     // ghost model dropped without waiting for the hologram.
-                    if center.distance_squared(eye) <= RADIUS_BLOCKS * RADIUS_BLOCKS
-                        && !occupied(at)
-                    {
+                    if !occupied(at) {
                         use mod_api::drawing::{
                             BLOCK_GRID_WASH_COLOR_PARAM, BLOCK_GRID_WASH_PARAM,
                         };

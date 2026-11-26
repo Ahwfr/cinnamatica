@@ -1,3 +1,9 @@
+# Cinnamatica 0.3.67
+
+- Correct the generated test catalogue: exclude internal registry placeholders, retaining all 1,312 Minecraft block identifiers and isolated sample spacing. The earlier inclusion of cinnabar:reserved caused the full native mesh to fail and fall back to a nearby window.
+- Remove the independent 64-block cutoff from native ghost entity models (beds, chests, banners and heads). Keep the existing per-frame and per-grid model limits.
+- Preserve explicit preview-failure diagnostics. Verification uses the real PhysicsCollisionRegistries lookup in both sequential and hashed modes, rather than a permissive record-name fallback.
+
 # Cinnamatica 0.3.66
 
 - Show the full-preview failure reason and whether upload or native meshing failed, instead of silently falling back to the nearby verifier window. This is a diagnostic update; it does not yet claim to repair the reported distant disappearance.

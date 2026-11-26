@@ -767,7 +767,7 @@ pub(crate) fn update_block_entity_scene(
         };
         runtime
             .hologram
-            .gather(&mod_scene.retained, dimension, eye, occupied, &mut pieces);
+            .gather(&mod_scene.retained, dimension, occupied, &mut pieces);
     }
     for drawn in &pieces {
         let at = drawn.at;
