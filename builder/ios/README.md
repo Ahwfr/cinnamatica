@@ -7,6 +7,18 @@ iOS guest adds a movable **Build** touch button and a touch **Close** menu butto
 The Files/iCloud picker converts supported schematics inside the app; no Windows
 importer or keyboard is required. Documents contains the private library/settings.
 
+The in-game Library tab loads and removes existing entries; import new files from
+Settings > Mods. The iOS-only Touch tab enables individual HUD buttons for layers,
+view-relative movement, rotation, mirror, visibility, placing the guide here and
+position locking. Layer buttons start enabled. Choices save immediately; use the
+normal touch layout editor to move or resize the enabled buttons.
+
+Close responds in the native input handler without waiting for the interpreter.
+While a repeat-enabled ghost is targeted, placement callbacks take priority over
+background tile maintenance; retained geometry stays visible between updates. This
+does not increase the server tick rate or bypass inventory confirmations. The
+responsiveness change still needs comparison on a real device.
+
 The iOS app uses Wasmtime's Pulley interpreter, not a JIT entitlement. It renders
 through Metal and links the Go core into the app. Current Cinnabar iOS does not
 provide a local-world server; joining a server/friend's world is distinct from that.

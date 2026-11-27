@@ -1144,7 +1144,7 @@ interface touch {
         /// Width and height in GUI pixels, each 18 through 96.
         size: point,
     }
-    /// Replaces this instance's retained buttons, at most 4; an empty list removes them.
+    /// Replaces this instance's retained buttons: up to 16 on iOS, 4 elsewhere; an empty list removes them.
     /// Committed after a successful callback; quarantine, unload and revocation remove them.
     set-buttons: func(buttons: list<button>) -> result<_, string>;
     /// IDs of this instance's buttons tapped since its previous frame callback, oldest first.

@@ -602,6 +602,11 @@ pub(super) fn prepare_mod_input(
         presentation.set_cinnamatica_pointer(pointer);
         if was_held {
             match pointer.and_then(|point| presentation.hit_test_cinnamatica(point)) {
+                Some(hit) if cfg!(target_os = "ios") && hit.id == "bw-close" => {
+                    presentation.end_cinnamatica_search();
+                    presentation.mod_ui_mut().set_mod_panel_open(false);
+                    client_ui::sound_requests::ui_click();
+                }
                 Some(hit) if hit.id == oreui::CINNAMATICA_SEARCH_ID => {
                     presentation.begin_cinnamatica_search();
                 }

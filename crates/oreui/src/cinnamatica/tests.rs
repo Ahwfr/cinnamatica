@@ -2,6 +2,48 @@ use super::*;
 use ui::{DpiScale, SafeArea, TextLayoutCache};
 use ui_engine::{test_support::fixture_font, text_metrics::TextMetrics};
 
+#[test]
+fn touch_configuration_rows_route_saved_values_without_overlapping() {
+    let bindings = BTreeMap::new();
+    let controls: Vec<_> = (0..15)
+        .map(|index| Control::Toggle {
+            id: format!("bw-set-touch-{index}"),
+            label: format!("Touch action {index}"),
+            value: index == 0,
+        })
+        .collect();
+    let input = CinnamaticaInput {
+        bindings: &bindings,
+        controls: &controls,
+        icon: &|_, _| None,
+    };
+    let window = Window {
+        input: &input,
+        hovered: None,
+        search: None,
+    };
+    let font = fixture_font();
+    let mut layouts = TextLayoutCache::new(64, 1024 * 1024);
+    let (mut nodes, mut next) = (Vec::new(), 1);
+    let metrics = TextMetrics::for_viewport([1280, 720], DpiScale::new(1.).unwrap(), Some(2));
+    let mut canvas = Canvas::new(&mut nodes, &mut next, &mut layouts, &font, metrics, 0, None);
+    let card = [0., 0., canvas.r(PANEL_WIDTH), canvas.r(50.)];
+    let top = canvas.r(8.);
+    let mut hits = Vec::new();
+    window
+        .touch_controls(&mut canvas, card, top, &mut hits)
+        .unwrap();
+    assert_eq!(hits.len(), controls.len());
+    for (index, (hit, b)) in hits.iter().enumerate() {
+        assert_eq!(hit.id, format!("bw-set-touch-{index}"));
+        assert_eq!(hit.value, if index == 0 { 0. } else { 1. });
+        assert!(b[0] >= card[0] && b[2] <= card[2] && b[3] <= card[3]);
+        for (_, other) in &hits[..index] {
+            assert!(b[2] <= other[0] || b[0] >= other[2] || b[3] <= other[1] || b[1] >= other[3]);
+        }
+    }
+}
+
 /// The mod's Settings panel: every switch, with fast-place on and hold-place off.
 fn controls() -> Vec<Control> {
     GROUPS

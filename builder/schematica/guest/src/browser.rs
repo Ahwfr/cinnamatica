@@ -10,7 +10,10 @@ use crate::Viewer;
 use serde_json::{Map, Value, json};
 
 /// The precomputed panel content. Regenerate with `SCHEMATICA_BROWSER_REGENERATE=1 cargo test`.
+#[cfg(not(feature = "ios-touch"))]
 pub const LAYOUT: &str = include_str!("../ui/browser.json");
+#[cfg(feature = "ios-touch")]
+pub const LAYOUT: &str = include_str!("../ui/browser-ios.json");
 /// Material rows in view; the mouse wheel moves through the list a view at a time.
 pub const ROWS: usize = 8;
 /// Library rows on the Import tab: every schematic one library can hold.
@@ -20,10 +23,14 @@ const SEARCH_ID: &str = "bw-search";
 /// The Fast Place mode button's control id.
 const MODE_ID: &str = "bw-fp-mode";
 /// Tab width and the gap between tabs; the underline moves by their sum.
-const TAB_WIDTH: f64 = 100.;
+const TAB_WIDTH: f64 = if cfg!(feature = "ios-touch") {
+    82.
+} else {
+    100.
+};
 const TAB_GAP: f64 = 4.;
 /// Tabs the Cinnamatica client draws natively with OreUI; the rest keep this JSON-UI layout.
-const NATIVE_TABS: [Tab; 4] = Tab::ALL;
+const NATIVE_TABS: &[Tab] = &Tab::ALL;
 /// The binding that asks the client for its native window, named as the client reads it.
 const NATIVE_BINDING: &str = "#cinnamatica_native";
 
@@ -35,10 +42,21 @@ pub enum Tab {
     Import,
     Settings,
     Controls,
+    #[cfg(feature = "ios-touch")]
+    Touch,
 }
 
 impl Tab {
+    #[cfg(not(feature = "ios-touch"))]
     const ALL: [Tab; 4] = [Tab::Materials, Tab::Import, Tab::Settings, Tab::Controls];
+    #[cfg(feature = "ios-touch")]
+    const ALL: [Tab; 5] = [
+        Tab::Materials,
+        Tab::Import,
+        Tab::Settings,
+        Tab::Controls,
+        Tab::Touch,
+    ];
 
     /// The panel control id of this tab's button.
     fn id(self) -> &'static str {
@@ -47,6 +65,8 @@ impl Tab {
             Tab::Import => "bw-tab-import",
             Tab::Settings => "bw-tab-settings",
             Tab::Controls => "bw-tab-controls",
+            #[cfg(feature = "ios-touch")]
+            Tab::Touch => "bw-tab-touch",
         }
     }
 
@@ -77,7 +97,10 @@ mod layout {
     use serde_json::{Value, json};
 
     /// Tab titles, matching [`Tab::ALL`].
+    #[cfg(not(feature = "ios-touch"))]
     const TABS: [&str; 4] = ["Materials", "Import", "Settings", "Controls"];
+    #[cfg(feature = "ios-touch")]
+    const TABS: [&str; 5] = ["Materials", "Library", "Settings", "Controls", "Touch"];
 
     const WINDOW: [f64; 2] = [460., 330.];
     /// The line under the tab strip; tab bodies start below it.
@@ -659,6 +682,7 @@ mod layout {
     /// Import: the import button, an active banner and a 2×4 grid of library cards.
     fn import(controls: &mut Controls) -> Vec<Value> {
         let mut nodes = heading("bw_lib", 300.);
+        #[cfg(not(feature = "ios-touch"))]
         nodes.push(named(
             "import",
             plain(
@@ -1158,6 +1182,19 @@ mod layout {
         card.push(named("import", body(1, import(&mut controls))));
         card.push(named("settings", body(2, settings(&mut controls))));
         card.push(named("controls", body(3, keys(&mut controls))));
+        #[cfg(feature = "ios-touch")]
+        {
+            let mut nodes = heading("bw_touch", WIDTH);
+            for (index, (_, _, title)) in crate::ios_touch::ACTIONS.iter().enumerate() {
+                // The iOS native renderer lays out these controls. Keeping a second
+                // invisible widget tree would exceed the bounded surface document.
+                controls.toggle(&format!("{SETTING_PREFIX}touch-{index}"), title);
+            }
+            nodes.push(footer(
+                "Enable HUD buttons; move and resize them with the touch layout editor.",
+            ));
+            card.push(named("touch", body(4, nodes)));
+        }
         let document = json!({
             "namespace": "browser",
             "root": {"type":"screen","size":["100%","100%"],"controls":[
@@ -1418,6 +1455,15 @@ impl Viewer {
         } else if let Some(tab) = Tab::ALL.into_iter().find(|tab| tab.id() == id) {
             self.browser_tab = tab;
         } else if let Some(key) = id.strip_prefix(SETTING_PREFIX) {
+            #[cfg(feature = "ios-touch")]
+            if let Some(index) = key
+                .strip_prefix("touch-")
+                .and_then(|v| v.parse::<usize>().ok())
+            {
+                crate::ios_touch::set(index, value >= 0.5);
+                self.options.save();
+                return;
+            }
             self.browser_setting(key, value >= 0.5);
         } else if id == "library-next" || id == "library-previous" {
             let count = self
@@ -1745,6 +1791,17 @@ pub fn bindings(viewer: &Viewer, out: &mut Map<String, Value>, controls: &mut Ve
             controls
                 .push(json!({"id":"bw-set-paste-destroy", "value":viewer.options.paste_destroy}));
             controls.push(json!({"id":"bw-set-auto-layer", "value":viewer.options.auto_layer}));
+        }
+        #[cfg(feature = "ios-touch")]
+        Tab::Touch => {
+            out.insert("#bw_touch_title".into(), json!("Touch controls"));
+            out.insert(
+                "#bw_touch_summary".into(),
+                json!("Choose the buttons shown while playing"),
+            );
+            for index in 0..crate::ios_touch::ACTIONS.len() {
+                controls.push(json!({"id":format!("bw-set-touch-{index}"), "value":crate::ios_touch::enabled(index)}));
+            }
         }
     }
 }
@@ -2109,7 +2166,12 @@ mod tests {
     #[test]
     fn precomputed_layout_matches_the_code() {
         if std::env::var_os("SCHEMATICA_BROWSER_REGENERATE").is_some() {
-            let path = concat!(env!("CARGO_MANIFEST_DIR"), "/ui/browser.json");
+            let path = concat!(env!("CARGO_MANIFEST_DIR"), "/ui/",);
+            let path = std::path::Path::new(path).join(if cfg!(feature = "ios-touch") {
+                "browser-ios.json"
+            } else {
+                "browser.json"
+            });
             std::fs::write(path, layout::layout()).unwrap();
             return;
         }
@@ -2137,9 +2199,10 @@ mod tests {
             assert!(ids.contains(&tab.id()));
         }
         // The host only lets the picker open from a click on a control named `import`.
-        for id in ["import", SEARCH_ID, MODE_ID] {
+        for id in [SEARCH_ID, MODE_ID] {
             assert!(ids.contains(&id), "{id} missing");
         }
+        assert_eq!(ids.contains(&"import"), !cfg!(feature = "ios-touch"));
         for row in 0..LIBRARY_ROWS {
             assert!(ids.contains(&format!("toggle-{row}").as_str()));
             assert!(ids.contains(&format!("delete-{row}").as_str()));

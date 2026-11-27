@@ -2,6 +2,9 @@
 //! controls. The mod keeps its logic: every click here becomes the same control event its
 //! JSON-UI window sends, so only tabs the mod marks native are drawn here.
 
+#[cfg(any(target_os = "ios", test))]
+mod touch;
+
 use std::collections::BTreeMap;
 
 use ui::mod_panel::{Control, SurfaceValue};
@@ -24,11 +27,20 @@ use super::{
 };
 
 /// The tab strip: control id and title, in the mod's tab order.
+#[cfg(not(target_os = "ios"))]
 const TABS: [(&str, &str); 4] = [
     ("bw-tab-materials", "Materials"),
     ("bw-tab-import", "Import"),
     ("bw-tab-settings", "Settings"),
     ("bw-tab-controls", "Controls"),
+];
+#[cfg(target_os = "ios")]
+const TABS: [(&str, &str); 5] = [
+    ("bw-tab-materials", "Materials"),
+    ("bw-tab-import", "Library"),
+    ("bw-tab-settings", "Settings"),
+    ("bw-tab-controls", "Controls"),
+    ("bw-tab-touch", "Touch"),
 ];
 /// Tab indices in [`TABS`].
 const MATERIALS_TAB: usize = 0;
@@ -358,7 +370,7 @@ impl Window<'_> {
         canvas.text_centred("Cinnamatica", header, HEADER5, role.text, false)?;
         #[cfg(target_os = "ios")]
         {
-            let close = [header[2] - canvas.r(10.), header[1], header[2], header[3]];
+            let close = [header[2] - canvas.r(12.), header[1], header[2], header[3]];
             self.button(
                 canvas,
                 "bw-close",
@@ -399,13 +411,19 @@ impl Window<'_> {
             IMPORT_TAB => self.import(canvas, card, body_top, &mut hits)?,
             SETTINGS_TAB => self.settings(canvas, card, body_top, &mut hits)?,
             CONTROLS_TAB => self.controls(canvas, card, body_top, &mut hits)?,
+            #[cfg(target_os = "ios")]
+            4 => self.touch_controls(canvas, card, body_top, &mut hits)?,
             _ => {}
         }
 
         // The footer: how to close.
         let footer_top = card[3] - canvas.r(FOOTER) + canvas.r(1.8);
         canvas.text_line(
-            "Settings save immediately  ·  M or Esc to close",
+            if cfg!(target_os = "ios") {
+                "Settings save immediately  ·  Tap Close to return"
+            } else {
+                "Settings save immediately  ·  M or Esc to close"
+            },
             [card[0] + pad, footer_top],
             card[2] - card[0] - pad * 2.0,
             CAPTION,
@@ -660,6 +678,7 @@ impl Window<'_> {
         let pad = canvas.r(PAD);
         let [left, right] = [card[0] + pad, card[2] - pad];
         let import = [right - canvas.r(18.0), top, right, top + canvas.r(BUTTON)];
+        #[cfg(not(target_os = "ios"))]
         self.button(
             canvas,
             "import",

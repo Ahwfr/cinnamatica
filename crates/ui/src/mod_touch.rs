@@ -3,7 +3,11 @@
 use crate::mod_hud::Anchor;
 
 /// Buttons one mod may retain at once.
-pub const MAX_TOUCH_BUTTONS: usize = 4;
+pub const MAX_TOUCH_BUTTONS: usize = if cfg!(target_os = "ios") {
+    MAX_PRESENTED_TOUCH_BUTTONS
+} else {
+    4
+};
 /// Buttons presented across every loaded mod; later mods' extra buttons are not shown.
 pub const MAX_PRESENTED_TOUCH_BUTTONS: usize =
     (semantic_input::touch::MOD_BUTTONS.end - semantic_input::touch::MOD_BUTTONS.start) as usize;

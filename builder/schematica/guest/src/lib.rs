@@ -164,8 +164,9 @@ struct Options {
 impl Options {
     fn save(&self) {
         #[cfg(not(test))]
-        let _ = settings::save(
-            &serde_json::json!({
+        {
+            #[allow(unused_mut)]
+            let mut value = serde_json::json!({
                 "hold_place": self.hold_place,
                 "auto_layer": self.auto_layer,
                 "paste_destroy": self.paste_destroy,
@@ -182,9 +183,13 @@ impl Options {
                 "render_radius": self.render_radius,
                 "tool_item_enabled": self.tool_item,
                 "library_revision": self.library_revision, "deleted_entries": self.deleted_entries,
-            })
-            .to_string(),
-        );
+            });
+            #[cfg(feature = "ios-touch")]
+            {
+                value["ios_touch_buttons"] = serde_json::json!(ios_touch::mask());
+            }
+            let _ = settings::save(&value.to_string());
+        }
     }
 }
 
@@ -217,6 +222,8 @@ impl Guest for Schematica {
             && raw.len() <= 16 * 1024
             && let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw)
         {
+            #[cfg(feature = "ios-touch")]
+            ios_touch::load(value["ios_touch_buttons"].as_u64());
             RUNTIME.with(|state| {
                 let options = &mut state.borrow_mut().2;
                 options.hold_place = value["hold_place"].as_bool().unwrap_or(false);
@@ -749,6 +756,10 @@ impl Viewer {
             }
             for event in keys.events {
                 self.browser_event(&event.id, event.value);
+                #[cfg(feature = "ios-touch")]
+                if event.id == "bw-close" {
+                    return;
+                }
                 changed = true;
             }
             if changed && self.dirty {
@@ -769,6 +780,12 @@ impl Viewer {
             return;
         }
         let gameplay = active_world && keys.gameplay;
+        #[cfg(feature = "ios-touch")]
+        for action in ios_touch::take_actions() {
+            if gameplay {
+                self.menu_action(&action);
+            }
+        }
         // Opening a panel needs focused input, not a current placement snapshot.
         // The host withholds key edges while another screen owns input.
         if keys.keys_pressed.iter().any(|key| key == "Escape") {
@@ -997,6 +1014,15 @@ impl Viewer {
         if publish_highlights && budget::remaining_fuel() >= 600_000 {
             self.publish_item_highlights();
             self.highlight_delay = 5;
+            return;
+        }
+        #[cfg(feature = "ios-touch")]
+        if self.retired.is_empty() && !self.dirty && self.shown && self.whole.active()
+            // Touch Use is not a keyboard key in read-controls. Reserve work
+            // while a repeat-enabled offer exists, not just for MouseRight.
+            && ios_touch::defer_background(placement_cell.is_some() && self.options.hold_place && self.options.fast_place)
+        {
+            self.publish_label(placement_cell);
             return;
         }
         if !self.retired.is_empty() {
