@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 mod android;
 #[cfg(target_os = "linux")]
 pub mod dbus;
+#[cfg(target_os = "ios")]
+mod ios;
 #[cfg(target_os = "macos")]
 mod macos;
 pub mod picker;

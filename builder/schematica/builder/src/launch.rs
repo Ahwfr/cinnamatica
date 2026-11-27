@@ -188,6 +188,7 @@ fn publish(mods: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+#[cfg(not(target_os = "ios"))]
 pub fn import_dialog(mods: &Path) -> Result<()> {
     let Some(inputs) = super::picker::choose()? else {
         return Ok(());
@@ -198,6 +199,11 @@ pub fn import_dialog(mods: &Path) -> Result<()> {
 }
 
 pub fn append_imports(mods: &Path, inputs: &[PathBuf]) -> Result<()> {
+    append_imports_with_template(mods, inputs, &template()?)
+}
+
+/// In-process mobile entry: template is supplied from the read-only app bundle.
+pub fn append_imports_with_template(mods: &Path, inputs: &[PathBuf], guest: &[u8]) -> Result<()> {
     let installed = mods.join("schematica-builder.wasm");
     let payload = if installed.is_file() {
         let file = fs::File::open(&installed)?;
@@ -223,12 +229,13 @@ pub fn append_imports(mods: &Path, inputs: &[PathBuf]) -> Result<()> {
         .ok()
         .and_then(|raw| serde_json::from_str(&raw).ok());
     if entries.len() + inputs.len() > blueprint::MAX_LIBRARY
-        && prune_deleted(&mut entries, revision, settings.as_ref()) {
+        && prune_deleted(&mut entries, revision, settings.as_ref())
+    {
         // Indices shifted, so a new revision makes the guest drop stale removals and placements.
         revision = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos() as u64;
     }
     super::add_inputs(&mut entries, inputs)?;
-    let bytes = super::encode_component(&template()?, &entries, revision)?;
+    let bytes = super::encode_component(guest, &entries, revision)?;
     publish(mods, &bytes)
 }
 
@@ -350,7 +357,7 @@ pub fn start(package: &Package, default_profile: &Path) -> Result<std::process::
 }
 
 /// Preserve the enabled state and normal gameplay grants while retiring unused capabilities.
-fn registration(profile: &Path, installed: &Path) -> Result<()> {
+pub fn registration(profile: &Path, installed: &Path) -> Result<()> {
     let directory = profile.join("config");
     fs::create_dir_all(&directory)?;
     let path = directory.join("local-mod.json");
@@ -410,4 +417,21 @@ fn registered(document: Option<serde_json::Value>, installed: &Path) -> Result<s
         }));
     }
     Ok(document)
+}
+
+/// Installs the bundled guest while preserving the user's entire existing library and grants.
+pub fn install_embedded(profile: &Path, guest: &[u8]) -> Result<()> {
+    let mods = profile.join("data/mods");
+    let installed = mods.join("schematica-builder.wasm");
+    let bytes = if installed.is_file() {
+        use std::io::Read;
+        let mut old = Vec::new();
+        fs::File::open(&installed)?.take(4 * 1024 * 1024 + 1).read_to_end(&mut old)?;
+        ensure!(old.len() <= 4 * 1024 * 1024, "installed schematic component is too large");
+        refresh_with_template(&old, guest)?
+    } else {
+        super::component(guest)?
+    };
+    publish(&mods, &bytes)?;
+    registration(profile, &installed)
 }

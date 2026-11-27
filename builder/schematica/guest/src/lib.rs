@@ -7,6 +7,8 @@ wit_bindgen::generate!({
 mod actions;
 mod browser;
 mod debug_info;
+#[cfg(feature = "ios-touch")]
+mod ios_touch;
 mod library;
 mod menu;
 mod native_bindings;
@@ -253,6 +255,8 @@ impl Guest for Schematica {
     }
 
     fn frame() {
+        #[cfg(feature = "ios-touch")]
+        ios_touch::frame();
         RUNTIME.with(|runtime| {
             let (runtime, catalog, options, active_entry) = &mut *runtime.borrow_mut();
             if matches!(*runtime, Runtime::Start) {

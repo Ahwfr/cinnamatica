@@ -1,4 +1,4 @@
-name: iOS
+name: Cinnamatica iOS
 
 # Builds the experimental arm64 iPhone/iPad IPA for iOS packaging changes, for `ios/*` branches
 # (so a fork branch yields an IPA without upstream access) and on demand. The artifact is
@@ -30,6 +30,7 @@ jobs:
       # Parallel codegen without LTO keeps this build affordable.
       CINNABAR_IOS_PROFILE: play
       CARGO_INCREMENTAL: "0"
+      CARGO_BUILD_JOBS: "2"
       FORK_CACHE_PATHS: |
         ~/.cargo/registry/index
         ~/.cargo/registry/cache
@@ -65,6 +66,12 @@ jobs:
             ios-${{ runner.os }}-
       - name: Install the icon renderer
         run: brew install librsvg
+      - name: Check native document picker syntax
+        timeout-minutes: 5
+        run: |
+          xcrun --sdk iphoneos clang -fsyntax-only -fobjc-arc \
+            -target arm64-apple-ios17.0 -isysroot "$(xcrun --sdk iphoneos --show-sdk-path)" \
+            packaging/ios/client/document-picker.m
       - name: Build the IPA
         run: bash packaging/ios/build-ipa.sh
       - name: Save the fork build cache
@@ -75,7 +82,7 @@ jobs:
           key: ${{ steps.cache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v7
         with:
-          name: cinnabar-ios-unsigned
+          name: cinnamatica-ios-unsigned
           path: target/ios/*-unsigned.ipa
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7

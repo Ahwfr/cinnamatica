@@ -996,7 +996,10 @@ mod layout {
                 [372., 168.],
             ),
         ));
-        for (line, key) in ["remember-placement", "auto-layer"].into_iter().enumerate() {
+        for (line, key) in ["remember-placement", "auto-layer", "item-highlights"]
+            .into_iter()
+            .enumerate()
+        {
             rows.push(switch(controls, key, [242., 214. + 28. * line as f64]));
         }
 
@@ -1145,6 +1148,7 @@ mod layout {
     /// The JSON-UI document and its routed controls.
     fn document() -> (String, Vec<Value>) {
         let mut controls = Controls::default();
+        controls.button("bw-close");
         let mut card = vec![named(
             "background",
             outlined(WINDOW, [0., 0.], CARD, BORDER),
@@ -1398,6 +1402,10 @@ impl Viewer {
     pub(super) fn browser_event(&mut self, id: &str, value: f32) {
         // Delete takes a second click on the same row; any other click cancels it.
         let confirming = self.delete_confirm.take();
+        if id == "bw-close" {
+            let _ = crate::panel::close();
+            return;
+        }
         if let Some(row) = id
             .strip_prefix("delete-")
             .and_then(|row| row.parse::<usize>().ok())

@@ -356,6 +356,18 @@ impl Window<'_> {
         canvas.fill(header, role.fill)?;
         canvas.bevel(header, role.specular[0], role.specular[1])?;
         canvas.text_centred("Cinnamatica", header, HEADER5, role.text, false)?;
+        #[cfg(target_os = "ios")]
+        {
+            let close = [header[2] - canvas.r(10.), header[1], header[2], header[3]];
+            self.button(
+                canvas,
+                "bw-close",
+                "Close",
+                close,
+                Variant::Secondary,
+                &mut hits,
+            )?;
+        }
 
         // The tabs.
         let pad = canvas.r(PAD);

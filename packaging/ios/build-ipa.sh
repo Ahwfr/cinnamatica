@@ -27,7 +27,7 @@ executable="$(pin executable)"
 export IPHONEOS_DEPLOYMENT_TARGET
 IPHONEOS_DEPLOYMENT_TARGET="$(pin deployment_target)"
 product="$(sed -n '/macro_rules! product_name/,/^}/s/^[[:space:]]*"\([^"]*\)"$/\1/p' crates/launcher/src/lib.rs | head -n 1)"
-version="$(version_of)"
+version="$(python3 -c 'import tomllib; print(tomllib.load(open("builder/schematica/Cargo.toml","rb"))["workspace"]["package"]["version"])')"
 [[ -n "$product" ]] || { echo 'cannot read the launcher product name' >&2; exit 1; }
 
 # The newest side-by-side install of the pinned Xcode major, as CI images name them.
@@ -51,6 +51,15 @@ app="$stage/Payload/$executable.app"
 ipa="$out/$product-$version-unsigned.ipa"
 rm -rf "$stage" "$ipa"
 mkdir -p "$app"
+
+# One iOS-only guest build: enables the touch menu without changing desktop/Android guests.
+export SCHEMATICA_BUILD_REVISION="${CINNABAR_BUILD_COMMIT:-$(git rev-parse HEAD)}"
+rustup target add wasm32-unknown-unknown
+cargo build --locked --release --manifest-path builder/schematica/Cargo.toml \
+    --target-dir "$out/builder" -p schematica-guest --features ios-touch --target wasm32-unknown-unknown
+mkdir -p "$app/$(pin resource_dir)/$(dirname "$(pin builder_template)")"
+install -m 0644 "$out/builder/wasm32-unknown-unknown/release/schematica_guest.wasm" \
+    "$app/$(pin resource_dir)/$(pin builder_template)"
 
 # One commit identifies both the app and the core, chosen as the Makefile does.
 export CINNABAR_BUILD_COMMIT="${CINNABAR_BUILD_COMMIT:-$(git rev-parse HEAD)}"

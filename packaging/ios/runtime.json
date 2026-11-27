@@ -1,7 +1,8 @@
 {
-  "bundle_id": "app.cinnabar.client",
-  "executable": "Cinnabar",
+  "bundle_id": "app.cinnamatica.client",
+  "executable": "Cinnamatica",
   "resource_dir": "local",
   "deployment_target": "17.0",
-  "xcode": "26"
+  "xcode": "26",
+  "builder_template": "builder/schematica-guest-template.bin"
 }

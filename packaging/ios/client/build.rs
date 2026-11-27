@@ -10,6 +10,14 @@ fn main() {
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("ios") {
         return;
     }
+    println!("cargo:rerun-if-changed=document-picker.m");
+    cc::Build::new()
+        .file("document-picker.m")
+        .flag("-fobjc-arc")
+        .compile("cinnamatica_document_picker");
+    println!("cargo:rustc-link-lib=framework=UIKit");
+    println!("cargo:rustc-link-lib=framework=Foundation");
+    println!("cargo:rustc-link-lib=framework=UniformTypeIdentifiers");
     let Some(archive) = env::var_os(ARCHIVE_ENV).map(PathBuf::from) else {
         panic!(
             "{ARCHIVE_ENV} must name the Go core's libbedrock_core.a; packaging/ios/build-ipa.sh builds it"

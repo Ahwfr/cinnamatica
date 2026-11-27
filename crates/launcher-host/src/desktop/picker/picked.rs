@@ -26,7 +26,7 @@ impl AsRef<Path> for PickedFile {
 
 impl PickedFile {
     /// Owns a copy under the Android picker's selection/index directories.
-    #[cfg(any(target_os = "android", test))]
+    #[cfg(any(target_os = "android", target_os = "ios", test))]
     pub(super) fn copied(path: PathBuf) -> Self {
         Self { path, copied: true }
     }

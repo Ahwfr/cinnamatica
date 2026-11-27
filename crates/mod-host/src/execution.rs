@@ -86,6 +86,19 @@ pub(crate) fn trusted_engine() -> Result<(Engine, EpochTicker)> {
 
 /// Creates an engine and the ticker thread that advances its epoch for deadline checks.
 fn ticking_engine(config: &Config) -> Result<(Engine, EpochTicker)> {
+    #[cfg(target_os = "ios")]
+    let config = {
+        let mut interpreted = config.clone();
+        interpreted.target("pulley64")?;
+        // Avoid desktop-sized virtual reservations on a memory-limited phone.
+        interpreted
+            .memory_reservation(crate::MEMORY_BYTES as u64)
+            .memory_guard_size(0)
+            .memory_reservation_for_growth(0);
+        interpreted
+    };
+    #[cfg(target_os = "ios")]
+    let config = &config;
     let engine = Engine::new(config)?;
     let ticking = engine.clone();
     let stop = Arc::new(AtomicBool::new(false));

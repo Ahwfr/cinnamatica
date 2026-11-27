@@ -12,6 +12,7 @@ struct Runtime {
     /// The bundle directory mirroring `.local/`. iOS reads a top-level `Resources` or
     /// `Contents` directory, in any case, as bundle structure and then rejects the app.
     resource_dir: String,
+    builder_template: String,
 }
 
 unsafe extern "C" {
@@ -63,6 +64,10 @@ fn run_client() -> Result<()> {
         .with_context(|| format!("create {}", runtime_root.display()))?;
     std::env::set_current_dir(runtime_root)
         .with_context(|| format!("enter {}", runtime_root.display()))?;
+    let guest = fs::read(layout.resource_root.join(&runtime.builder_template))
+        .context("read the matching bundled Cinnamatica guest")?;
+    let profile = container.join("Documents");
+    schematica_builder::launch::install_embedded(&profile, &guest)?;
     configure_ios(layout)?;
     if cinnabar::lifecycle::before_run(false)? {
         cinnabar::run(cinnabar::args::ClientArgs {

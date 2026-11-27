@@ -62,6 +62,10 @@ problem. The build includes the experimental Java shader-pack renderer: drop a p
 `data/shaderpacks` and pick it in the Shaders tab. Packs render at the screen's native 3×
 resolution, so a heavy pack is GPU-bound on a phone; its lower quality profiles cost less.
 
+## Cinnamatica schematics
+
+The bundled iOS mod adds a movable **Build** touch control. Tap it to open the schematic menu and **Close** in the header to return to the world. Import opens Files/iCloud and converts the chosen supported schematic in-process. Hold the normal touch Use control for Hold to Place. Test multi-touch and cancellation on the target device; this port is experimental.
+
 ## Controls
 
 The same on-screen touch controls as on Android: the stick moves, dragging elsewhere turns,
@@ -71,7 +75,7 @@ keyboard and mouse work only as far as winit's UIKit backend delivers their inpu
 
 ## Not supported
 
-- Local worlds, mods and anything that needs JIT or a second process.
+- Local worlds and features requiring a second process. Cinnamatica personal mods now use the Pulley interpreter; arbitrary third-party mods and server Experiences are not verified on iOS.
 - Preparing assets on the device: inject them with `add-assets.py` before sideloading.
 - The crash monitor and native crash dumps; Rust panics still write crash folders.
 - Clipboard and opening links. Sign in with the device code on another device.
