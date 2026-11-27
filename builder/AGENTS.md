@@ -7,7 +7,7 @@ Review the final diff and package for private data and required notices.
 Use only an authorized repository for pushes. Prepare a patch if access is
 unavailable. Public releases and visibility changes require owner approval.
 
-Each shipped update increments workspace.package.version in schematica/Cargo.toml.
+Keep workspace.package.version in schematica/Cargo.toml aligned across platforms. Platform ports and platform-only changes keep the shared release version; increment it only for shared features or fixes. Use commit IDs to distinguish platform builds.
 Keep RELEASE-NOTES.md and UPDATE.md accurate for that version. The guest and importer
 inherit the shared version. Preserve the stable schematica-builder.wasm filename.
 

@@ -1,5 +1,7 @@
 # Cinnamatica for iOS (experimental)
 
+The iOS port stays on shared version **0.3.69**, matching Windows/Linux. Platform build commit IDs distinguish port revisions; a port alone does not bump the release version.
+
 The iOS port shares the Windows/Linux placement, hologram and schematic code. The
 iOS guest adds a movable **Build** touch button and a touch **Close** menu button.
 The Files/iCloud picker converts supported schematics inside the app; no Windows

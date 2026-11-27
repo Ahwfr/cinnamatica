@@ -97,7 +97,7 @@ Everything from 0.3.57, plus:
 Verified: the mod's unit tests (93, with new ones for the double chest frame and the fallback gate). The mod's WASM file and the full client were not built here. Not tried in the game: everything above.
 
 
-# Cinnamatica 0.3.70 — iOS port
+# Cinnamatica 0.3.69 — iOS port
 
 - Add iOS-only Build touch menu control, touch Close, interpreter-backed personal mod execution, and the matching bundled guest.
 - Share the bounded schematic converter/library writer with the native iOS Files importer, preserving existing library data and grants on app updates.
