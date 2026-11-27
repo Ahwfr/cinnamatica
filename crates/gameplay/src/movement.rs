@@ -23,6 +23,7 @@ mod emote;
 mod encoding;
 mod input_state;
 mod interaction_rotation;
+mod placement_movement;
 
 pub use input_state::TickInput;
 mod evidence;
@@ -493,14 +494,29 @@ impl MovementTicker {
             .map(|placement| (placement.pitch, placement.yaw))
             .or(action_facing)
             .unwrap_or((sample.pitch, sample.yaw));
+        let mut flags = input_flags(sample, self.previous_input);
+        if placement.is_some() {
+            let [left, forward] = placement_movement::rebase(raw_move_vector, sample.yaw, yaw);
+            flags = flags
+                .with_mask(PlayerInputFlags::UP, forward > 0.001)
+                .with_mask(PlayerInputFlags::DOWN, forward < -0.001)
+                .with_mask(PlayerInputFlags::LEFT, left > 0.001)
+                .with_mask(PlayerInputFlags::RIGHT, left < -0.001);
+        }
         let snapshot = PlayerAuthInputSnapshot {
             tick: self.next_tick,
             position: sample.position,
             // Vanilla sends the end-of-tick velocity as the position delta.
             delta: sample.velocity,
-            move_vector,
-            analogue_move_vector,
-            raw_move_vector,
+            move_vector: placement.map_or(move_vector, |_| {
+                placement_movement::rebase(move_vector, sample.yaw, yaw)
+            }),
+            analogue_move_vector: placement.map_or(analogue_move_vector, |_| {
+                placement_movement::rebase(analogue_move_vector, sample.yaw, yaw)
+            }),
+            raw_move_vector: placement.map_or(raw_move_vector, |_| {
+                placement_movement::rebase(raw_move_vector, sample.yaw, yaw)
+            }),
             pitch,
             yaw,
             head_yaw: placement.map_or(sample.head_yaw, |_| wire_head_yaw(yaw)),
@@ -510,9 +526,7 @@ impl MovementTicker {
                 || interaction_rotation::from_facing(sample.pitch, sample.yaw),
                 |placement| placement.interaction,
             ),
-            flags: input_flags(sample, self.previous_input)
-                | self.take_next_tick_flags()
-                | self.advance_emote_input(),
+            flags: flags | self.take_next_tick_flags() | self.advance_emote_input(),
             input_mode: sample.input_mode,
             interaction_model: self.interaction_model(sample.input_mode),
             vehicle: sample.processed.vehicle.map(|vehicle| vehicle.input()),

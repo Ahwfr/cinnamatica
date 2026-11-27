@@ -14,6 +14,7 @@ use std::time::Duration;
 
 #[derive(Resource, Default)]
 pub(crate) struct CreativePlacement {
+    pub(super) support: super::support_state::SupportAssist,
     pub offer: Option<CreativePlacementOffer>,
     pub locked: bool,
     pub hold_active: bool,
@@ -98,9 +99,9 @@ impl TemporaryAim {
         let [pitch, yaw] = super::orientation::wire_facing(self.placement.rotation);
         movement
             .latest_written_facing()
-            .is_some_and(|(tick, [sent_pitch, sent_yaw])| {
+            .is_some_and(|(_, [sent_pitch, sent_yaw])| {
                 let yaw_error = (sent_yaw - yaw + 180.0).rem_euclid(360.0) - 180.0;
-                tick >= self.tick && (sent_pitch - pitch).abs() <= 0.05 && yaw_error.abs() <= 0.05
+                (sent_pitch - pitch).abs() <= 0.05 && yaw_error.abs() <= 0.05
             })
     }
 }
@@ -542,7 +543,8 @@ pub(super) fn try_start(
         && (observed.target.face > 5
             || (!use_air
                 && !replacing_plant
-                && placement_cell(observed.target.position, observed.target.face) != offer.position));
+                && placement_cell(observed.target.position, observed.target.face)
+                    != offer.position));
     if select_only {
         bevy::log::info!(
             ghost = ?offer.position,
@@ -678,6 +680,7 @@ pub(super) fn clear(
 ) {
     if let Some(policy) = policy {
         policy.hold_active = false;
+        policy.cancel_support();
         if policy
             .pending
             .take()
@@ -909,10 +912,14 @@ pub(super) fn resume(
             tick = aim.tick, support_ray = ?placement.support_ray,
             facing = ?super::orientation::wire_facing(placement.rotation),
             "Fast Place: sending placement facing");
-        if let Some(policy) = context.creative.as_deref_mut() {
-            policy.pending = Some(pending);
+        // The server already has this facing on a run of identical blocks. Do not
+        // spend another movement tick re-sending the same aim for every block.
+        if !aim.written(movement) {
+            if let Some(policy) = context.creative.as_deref_mut() {
+                policy.pending = Some(pending);
+            }
+            return true;
         }
-        return true;
     }
     let mut view = *context.view;
     let observed = if let Some(aim) = pending.aim {

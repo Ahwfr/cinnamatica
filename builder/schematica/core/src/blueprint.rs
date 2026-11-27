@@ -6,10 +6,12 @@ pub const MAX_CELLS: usize = 400_000;
 // variants. Palette data still shares the bounded embedded-library byte budget.
 pub const MAX_PALETTE: usize = 4096;
 pub const SLOT_MARKER: &[u8] = b"schematica:embedded-library:v4\x00";
-pub const MAX_LIBRARY: usize = 8;
+pub const MAX_LIBRARY: usize = 16;
 // Preserve the existing fixed WASM slot and old imported libraries. The 32 KiB term
 // describes the original slot allocation, not a limit on any decoded palette.
-const LIBRARY_BYTES: usize = 13 + MAX_LIBRARY * (4 + 200_000 + 32 * 1024);
+// More entries share the original v4 byte budget; do not enlarge the component
+// beyond the host's module limit or change the fixed slot in existing libraries.
+const LIBRARY_BYTES: usize = 13 + 8 * (4 + 200_000 + 32 * 1024);
 // One SCL2 header and entry length precede a single entry. Palette and cell data
 // share the available capacity instead of imposing a separate palette-byte cap.
 const PAYLOAD_BYTES: usize = LIBRARY_BYTES - 13 - 4;
@@ -289,7 +291,7 @@ impl<'a> Decoder<'a> {
             };
             state.states.insert(key, value);
         }
-        self.palette.push(state);
+        self.palette.push(crate::normalization::for_building(state));
         Ok(false)
     }
 

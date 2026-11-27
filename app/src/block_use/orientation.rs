@@ -160,7 +160,12 @@ pub(super) fn wanted_quadrant(offer: &CreativePlacementOffer) -> Option<usize> {
         .get("orientation")
         .and_then(|state| state["value"].as_str())
     {
-        let front = orientation.split('_').next()?;
+        let (front, top) = orientation.split_once('_')?;
+        let front = if offer.name == "minecraft:crafter" && matches!(front, "up" | "down") {
+            top
+        } else {
+            front
+        };
         return ["north", "east", "south", "west"]
             .iter()
             .position(|direction| *direction == front);
@@ -717,6 +722,9 @@ pub(super) fn air_place_face(offer: &CreativePlacementOffer) -> Option<u8> {
     // DoorItem needs a solid floor. An air click cannot make a freestanding door.
     (!ceiling_lever(offer)
         && !horizontal_pillar
+        // A floating BlockItem use resolves as a top-face bridge placement.
+        // Do not offer it for an attachment that explicitly needs another face.
+        && wanted_face(offer).is_none_or(|face| face == 1)
         && !(offer.name == "minecraft:hopper" && wanted_face(offer) != Some(1))
         && !matches!(
             offer.name.as_str(),
@@ -846,17 +854,6 @@ pub(super) fn needs_toggle(
         return actual
             .and_then(|state| serde_json::from_str::<serde_json::Value>(state).ok())
             .is_some_and(|state| state["bite_counter"]["value"].as_u64() == Some(0));
-    }
-    if offer.correct_aim
-        && matches!(
-            offer.name.as_str(),
-            "minecraft:daylight_detector" | "minecraft:daylight_detector_inverted"
-        )
-    {
-        return matches!(
-            actual_name,
-            Some("minecraft:daylight_detector" | "minecraft:daylight_detector_inverted")
-        ) && actual_name != Some(offer.name.as_str());
     }
     if !offer.correct_aim
         || !offer.name.ends_with("trapdoor")
@@ -1287,6 +1284,7 @@ mod tests {
             }),
         );
         assert_eq!(wanted_face(&rod), Some(4));
+        assert_eq!(air_place_face(&rod), None);
         assert!(support_produces_axis(&rod, 4));
         assert!(!support_produces_axis(&rod, 1));
         let dropper = offer(
@@ -1310,6 +1308,22 @@ mod tests {
             }),
         );
         assert_eq!(wanted_quadrant(&up), None);
+    }
+
+    #[test]
+    fn floating_lightning_rods_only_offer_the_measured_upward_state() {
+        for name in [
+            "minecraft:lightning_rod",
+            "minecraft:oxidized_lightning_rod",
+        ] {
+            for face in 0..6 {
+                let rod = offer(
+                    name,
+                    serde_json::json!({"facing_direction":{"type":"int","value":face}}),
+                );
+                assert_eq!(air_place_face(&rod), (face == 1).then_some(1));
+            }
+        }
     }
 
     #[test]

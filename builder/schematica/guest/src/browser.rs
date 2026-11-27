@@ -14,7 +14,7 @@ pub const LAYOUT: &str = include_str!("../ui/browser.json");
 /// Material rows in view; the mouse wheel moves through the list a view at a time.
 pub const ROWS: usize = 8;
 /// Library rows on the Import tab: every schematic one library can hold.
-const LIBRARY_ROWS: usize = schematica_core::blueprint::MAX_LIBRARY;
+pub(super) const LIBRARY_ROWS: usize = 8;
 /// The materials search field's control id.
 const SEARCH_ID: &str = "bw-search";
 /// The Fast Place mode button's control id.
@@ -56,16 +56,15 @@ impl Tab {
 }
 
 /// The Settings tab's switches: option key and title. Controls are named `bw-set-<key>`.
-const SETTINGS: [(&str, &str); 9] = [
+const SETTINGS: [(&str, &str); 8] = [
     ("hold-place", "Hold to place"),
     ("placement-lock", "Placement lock"),
     ("look", "Textured ghost blocks"),
     ("remember-placement", "Remember positions"),
-    ("paste-destroy", "Replace wrong blocks"),
+    ("paste-destroy", "Remove wrong blocks"),
     ("fast-place", "Fast Place"),
-    ("correct-aim", "Auto orientation"),
-    ("bridge-place", "Nearby placement assist"),
     ("auto-layer", "Auto next layer"),
+    ("item-highlights", "Highlight needed items"),
 ];
 const SETTING_PREFIX: &str = "bw-set-";
 
@@ -129,7 +128,11 @@ mod layout {
     const SWITCH: [f64; 2] = [26., 16.];
 
     /// What each Settings row does, shown in the hint box while the row is hovered.
-    const HINTS: [(&str, &str); 12] = [
+    const HINTS: [(&str, &str); 11] = [
+        (
+            "item-highlights",
+            "Outlines the items the schematic needs in your inventory and open containers.",
+        ),
         (
             "fast-place",
             "Places the targeted ghost block for you, picking the material from the hotbar, inventory or Creative catalog.",
@@ -145,14 +148,6 @@ mod layout {
         (
             "placement-lock",
             "Blocks normal placement outside the targeted ghost or with the wrong block. Not the same as Lock guide position.",
-        ),
-        (
-            "correct-aim",
-            "Turns the facing sent with a placement to match the schematic, without moving your camera.",
-        ),
-        (
-            "bridge-place",
-            "Lets a single click use a nearby ghost and support face. Hold to place uses the direct aim.",
         ),
         (
             "look",
@@ -541,7 +536,17 @@ mod layout {
 
     /// Materials: search, progress and a paged, alphabetical list with icons.
     fn materials(controls: &mut Controls) -> Vec<Value> {
-        let mut nodes = heading("bw", 280.);
+        let mut nodes = heading("bw", 170.);
+        nodes.push(named(
+            "scope",
+            plain(
+                controls,
+                "materials-scope",
+                "#bw_material_scope",
+                [110., 18.],
+                [182., 36.],
+            ),
+        ));
         nodes.push(named(
             "search",
             field(controls, SEARCH_ID, "Filter...", [148., 18.], [300., 36.]),
@@ -769,6 +774,22 @@ mod layout {
                 ),
             ));
         }
+        nodes.push(named(
+            "library_previous",
+            plain(controls, "library-previous", "<", [24., 18.], [340., 295.]),
+        ));
+        nodes.push(named(
+            "library_page",
+            bind(
+                text("Page 1", [50., 10.], [368., 300.], MUTED, "center"),
+                "#bw_lib_page",
+                "#text",
+            ),
+        ));
+        nodes.push(named(
+            "library_next",
+            plain(controls, "library-next", ">", [24., 18.], [424., 295.]),
+        ));
         nodes.push(footer("Loading closes this window"));
         nodes
     }
@@ -901,26 +922,15 @@ mod layout {
             width,
         );
         rows.push((MODE_ID.into(), row, index));
-        for (line, key) in [
-            "hold-place",
-            "placement-lock",
-            "correct-aim",
-            "bridge-place",
-        ]
-        .into_iter()
-        .enumerate()
-        {
+        for (line, key) in ["hold-place", "placement-lock"].into_iter().enumerate() {
             rows.push(switch(controls, key, [20., 114. + 28. * line as f64]));
         }
 
         nodes.extend(group("display", "Display", [214., 128.], [234., 60.]));
         rows.push(switch(controls, "look", [242., 78.]));
-        for (line, (id, title, binding)) in [
-            ("target-info", "Target info", "#bw_target_info"),
-            ("lightness", "Ghost lightness", "#bw_lightness"),
-        ]
-        .into_iter()
-        .enumerate()
+        for (line, (id, title, binding)) in [("target-info", "Target info", "#bw_target_info")]
+            .into_iter()
+            .enumerate()
         {
             let (row, index) = cycle_row(
                 controls,
@@ -934,6 +944,19 @@ mod layout {
         }
 
         nodes.extend(group("behavior", "Behavior", [214., 110.], [234., 194.]));
+        nodes.push(named(
+            "lightness_label",
+            text("#bw_lightness", [198., 10.], [242., 132.], TEXT, "left"),
+        ));
+        let light = controls.push(json!({"kind":"slider","id":"ghost-lightness","label":"Ghost lightness","value":5,"min":0,"max":100,"step":1}));
+        let mut light_track = panel(
+            vec![named("bar", rect([118., 3.], [0., 7.], BORDER, 0.))],
+            [124., 18.],
+            [242., 146.],
+        );
+        light_track["type"] = json!("button");
+        light_track["button_mappings"] = json!([{"from_button_id":"button.menu_select","to_button_id":format!("mod.axis:{light}:x"),"mapping_type":"pressed"}]);
+        nodes.push(named("ghost_lightness_slider", light_track));
         let range = controls.push(json!({"kind":"slider","id":"render-radius",
             "label":"Ghost render radius","value":512,"min":16,"max":512,"step":16}));
         nodes.push(named(
@@ -973,10 +996,7 @@ mod layout {
                 [372., 168.],
             ),
         ));
-        for (line, key) in ["remember-placement", "auto-layer", "paste-destroy"]
-            .into_iter()
-            .enumerate()
-        {
+        for (line, key) in ["remember-placement", "auto-layer"].into_iter().enumerate() {
             rows.push(switch(controls, key, [242., 214. + 28. * line as f64]));
         }
 
@@ -1044,6 +1064,12 @@ mod layout {
         let [(_, _, a), (_, _, b), (_, _, c)] = columns;
         let buttons = [
             ("place", "Place here", wide, [left(a), 90.]),
+            ("move-forward", "Forward", half, [left(a), 118.]),
+            ("move-back", "Back", half, [right(a), 118.]),
+            ("move-left", "Left", half, [left(a), 142.]),
+            ("move-right", "Right", half, [right(a), 142.]),
+            ("move-down", "Down", half, [left(a), 166.]),
+            ("move-up", "Up", half, [right(a), 166.]),
             ("ccw", "Rotate left", half, [left(b), 90.]),
             ("cw", "Rotate right", half, [right(b), 90.]),
             ("mirror", "Mirror", wide, [left(b), 114.]),
@@ -1084,6 +1110,15 @@ mod layout {
                 "left",
             ),
         ));
+        let (remove, _) = switch_row(
+            controls,
+            "paste-destroy",
+            "Remove wrong blocks",
+            "Remove wrong blocks",
+            [20., 246.],
+            240.,
+        );
+        nodes.push(named("paste_remove_wrong", remove));
         nodes.push(named("paste_box", framed([WIDTH, 30.], [PAD, 272.])));
         nodes.push(named(
             "paste",
@@ -1169,6 +1204,8 @@ pub(super) struct MaterialPageCounts {
     /// Blocks already in the world as planned, per row; what is left is the total less these.
     built: [u64; ROWS],
     cursor: usize,
+    row_cursor: usize,
+    index_cursor: usize,
     /// Finished counts by material, kept while the palette and the placed totals are unchanged,
     /// so a page seen before (or one the search brings back) shows at once instead of
     /// counting every tile again.
@@ -1189,15 +1226,88 @@ fn spare_fuel() -> u64 {
 }
 
 /// Fuel the Materials page leaves for the rest of the frame, and the most it counts per call.
-const COUNT_RESERVE: u64 = 1_100_000;
+const COUNT_RESERVE: u64 = 450_000;
 // Leave room for row bindings, icon data and the panel patch in this callback.
 const PALETTE_PER_CALL: usize = 32;
 const TILES_PER_CALL: usize = 32;
 
+/// The selected layer's totals and correct blocks, built without a full-volume scan.
+#[derive(Default)]
+pub(super) struct LayerMaterials {
+    key: Option<(usize, i32, u64)>,
+    cursor: usize,
+    total: std::collections::HashMap<String, u64>,
+    correct: std::collections::HashMap<String, u64>,
+}
+
 impl Viewer {
+    fn prepare_layer_materials(&self) {
+        if !self.options.materials_layer {
+            return;
+        }
+        let built = self.tiles.iter().map(|tile| tile.built).sum();
+        let key = (
+            self.schematic.palette().as_ptr() as usize,
+            self.layer,
+            built,
+        );
+        let mut count = self.browser_layer_counts.borrow_mut();
+        if count.key != Some(key) {
+            *count = LayerMaterials {
+                key: Some(key),
+                ..Default::default()
+            };
+        }
+        let cells = self
+            .schematic
+            .layer_cells(schematica_core::LayerMode::Single(self.layer));
+        let width = self.schematic.size()[0] as usize;
+        let mut steps = 0;
+        while count.cursor < cells.len() && steps < 32 && spare_fuel() > COUNT_RESERVE {
+            let i = count.cursor;
+            let state = &self.schematic.palette()[cells[i] as usize];
+            if !state.is_air() && !state.is_placement_artifact() {
+                *count.total.entry(state.name.clone()).or_default() += 1;
+                let correct = self.placement.is_some_and(|placement| {
+                    let pos = placement.local_to_world(
+                        self.schematic.size(),
+                        [(i % width) as i32, self.layer, (i / width) as i32],
+                    );
+                    self.tiles.iter().find_map(|tile| tile.status_at(pos))
+                        == Some(schematica_core::CellStatus::Correct)
+                });
+                if correct {
+                    *count.correct.entry(state.name.clone()).or_default() += 1;
+                }
+            }
+            count.cursor += 1;
+            steps += 1;
+        }
+    }
+
+    fn material_total(&self, index: usize) -> u64 {
+        let line = &self.materials[index];
+        if self.options.materials_layer {
+            self.browser_layer_counts
+                .borrow()
+                .total
+                .get(&line.name)
+                .copied()
+                .unwrap_or(0)
+        } else {
+            line.total
+        }
+    }
+
     pub(super) fn material_counts_pending(&self) -> bool {
         self.browser_tab == Tab::Materials
             && (self.material_names_pending()
+                || (self.options.materials_layer
+                    && self.browser_layer_counts.borrow().cursor
+                        < self
+                            .schematic
+                            .layer_cells(schematica_core::LayerMode::Single(self.layer))
+                            .len())
                 || (self.browser_counts.borrow().cursor < self.tiles.len()
                     && self.material_scan_available()))
     }
@@ -1244,7 +1354,10 @@ impl Viewer {
         cache.as_ref().map_or_else(Vec::new, |(_, names)| {
             names
                 .iter()
-                .filter(|(_, _, lower)| search.is_empty() || lower.contains(&search))
+                .filter(|(index, _, lower)| {
+                    (search.is_empty() || lower.contains(&search))
+                        && (!self.options.materials_layer || self.material_total(*index) > 0)
+                })
                 .map(|(index, name, _)| (*index, name.clone()))
                 .collect()
         })
@@ -1298,6 +1411,27 @@ impl Viewer {
             self.browser_tab = tab;
         } else if let Some(key) = id.strip_prefix(SETTING_PREFIX) {
             self.browser_setting(key, value >= 0.5);
+        } else if id == "library-next" || id == "library-previous" {
+            let count = self
+                .library
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| !self.options.deleted_entries.contains(i))
+                .count();
+            let last = count.saturating_sub(1) / LIBRARY_ROWS;
+            self.library_page = if id == "library-next" {
+                (self.library_page + 1).min(last)
+            } else {
+                self.library_page.saturating_sub(1)
+            };
+        } else if id == "materials-scope" {
+            self.options.materials_layer = !self.options.materials_layer;
+            self.material_page = 0;
+            *self.browser_counts.borrow_mut() = Default::default();
+            self.options.save();
+        } else if id == "ghost-lightness" {
+            self.options.lightness = value.clamp(0., 100.).round() as u8;
+            self.options.save();
         } else if id == "render-radius" {
             self.options.render_radius = ((value.clamp(16., 512.) / 16.).round() as u16) * 16;
             self.options.save();
@@ -1307,7 +1441,14 @@ impl Viewer {
         } else if id == "bw-export" {
             self.export_button();
         } else if id == MODE_ID {
-            self.options.strict_place = !self.options.strict_place;
+            if self.options.support_place {
+                self.options.support_place = false;
+                self.options.strict_place = false;
+            } else if self.options.strict_place {
+                self.options.support_place = true;
+            } else {
+                self.options.strict_place = true;
+            }
             self.options.save();
         } else if id != SEARCH_ID {
             self.menu_action(id);
@@ -1327,6 +1468,8 @@ impl Viewer {
             "correct-aim" => options.correct_aim,
             "bridge-place" => options.bridge_place,
             "auto-layer" => options.auto_layer,
+            "item-highlights" => options.item_highlights,
+            "materials-layer" => options.materials_layer,
             _ => false,
         }
     }
@@ -1352,6 +1495,27 @@ impl Viewer {
         materials: [Option<usize>; ROWS],
         scanned: bool,
     ) -> [Option<u64>; ROWS] {
+        if self.options.materials_layer {
+            let counts = self.browser_layer_counts.borrow();
+            let complete = counts.cursor
+                == self
+                    .schematic
+                    .layer_cells(schematica_core::LayerMode::Single(self.layer))
+                    .len();
+            return materials.map(|index| {
+                index.and_then(|i| {
+                    complete.then(|| {
+                        let name = &self.materials[i].name;
+                        counts
+                            .total
+                            .get(name)
+                            .copied()
+                            .unwrap_or(0)
+                            .saturating_sub(counts.correct.get(name).copied().unwrap_or(0))
+                    })
+                })
+            });
+        }
         if !scanned {
             return materials.map(|index| index.map(|index| self.materials[index].total));
         }
@@ -1367,6 +1531,8 @@ impl Viewer {
             counts.palette_indices = Default::default();
             counts.built = [0; ROWS];
             counts.cursor = 0;
+            counts.row_cursor = 0;
+            counts.index_cursor = 0;
         }
         // Every row on this page was counted before: show it without walking the tiles.
         if materials
@@ -1404,16 +1570,23 @@ impl Viewer {
         let mut counted = 0;
         while counts.cursor < self.tiles.len()
             && counted < TILES_PER_CALL
-            && (counted == 0 || spare_fuel() >= COUNT_RESERVE)
+            && spare_fuel() >= COUNT_RESERVE
         {
             let tile = &self.tiles[counts.cursor];
-            for (row, material) in materials.iter().enumerate() {
-                if material.is_some() {
-                    let add = u64::from(tile.material_counts(&counts.palette_indices[row])[1]);
-                    counts.built[row] += add;
-                }
+            let row = counts.row_cursor;
+            let start = counts.index_cursor;
+            let end = (start + 16).min(counts.palette_indices[row].len());
+            let add = u64::from(tile.material_counts(&counts.palette_indices[row][start..end])[1]);
+            counts.built[row] += add;
+            counts.index_cursor = end;
+            if end == counts.palette_indices[row].len() {
+                counts.index_cursor = 0;
+                counts.row_cursor += 1;
             }
-            counts.cursor += 1;
+            if counts.row_cursor == ROWS {
+                counts.row_cursor = 0;
+                counts.cursor += 1;
+            }
             counted += 1;
         }
         if counts.cursor == self.tiles.len() {
@@ -1481,6 +1654,7 @@ pub(crate) fn item_for_block(block: &str) -> String {
         "lit_smoker" => "smoker",
         "lit_redstone_lamp" => "redstone_lamp",
         "lit_redstone_ore" => "redstone_ore",
+        "daylight_detector_inverted" => "daylight_detector",
         "unlit_redstone_torch" => "redstone_torch",
         "standing_sign" | "wall_sign" => "oak_sign",
         other => {
@@ -1558,7 +1732,12 @@ pub fn bindings(viewer: &Viewer, out: &mut Map<String, Value>, controls: &mut Ve
         Tab::Materials => materials(viewer, out),
         Tab::Import => import(viewer, out),
         Tab::Settings => settings(viewer, out, controls),
-        Tab::Controls => keys(viewer, out),
+        Tab::Controls => {
+            keys(viewer, out);
+            controls
+                .push(json!({"id":"bw-set-paste-destroy", "value":viewer.options.paste_destroy}));
+            controls.push(json!({"id":"bw-set-auto-layer", "value":viewer.options.auto_layer}));
+        }
     }
 }
 
@@ -1573,13 +1752,28 @@ fn shorten(text: &str, limit: usize) -> String {
 }
 
 fn materials(viewer: &Viewer, out: &mut Map<String, Value>) {
+    viewer.prepare_layer_materials();
+    out.insert(
+        "#bw_material_scope".into(),
+        json!(if viewer.options.materials_layer {
+            "Current layer"
+        } else {
+            "Whole build"
+        }),
+    );
     let scanned = viewer.material_scan_available();
-    let total: u64 = viewer.materials.iter().map(|line| line.total).sum();
+    let total: u64 = (0..viewer.materials.len())
+        .map(|i| viewer.material_total(i))
+        .sum();
     // Per-material counts walk every tile, so only the rows in view compute them; the
     // totals read each tile's built count. What is left is the total less what is built, so
     // blocks in unloaded or unchecked parts of the guide count as left, not as done.
     let needed: u64 = if scanned {
-        total.saturating_sub(viewer.tiles.iter().map(|tile| tile.built).sum())
+        total.saturating_sub(if viewer.options.materials_layer {
+            viewer.browser_layer_counts.borrow().correct.values().sum()
+        } else {
+            viewer.tiles.iter().map(|tile| tile.built).sum()
+        })
     } else {
         total
     };
@@ -1681,17 +1875,17 @@ fn materials(viewer: &Viewer, out: &mut Map<String, Value>) {
         );
         out.insert(
             format!("#bw_row{row}_total"),
-            json!(line.map_or(String::new(), |line| line.total.to_string())),
+            json!(entry.map_or(String::new(), |(index, _)| {
+                viewer.material_total(*index).to_string()
+            })),
         );
     }
 }
 
 fn import(viewer: &Viewer, out: &mut Map<String, Value>) {
-    let mut count = 0;
     let mut banner = None;
     for row in 0..LIBRARY_ROWS {
         let index = viewer.visible_entry(row);
-        count += usize::from(index.is_some());
         let loaded = viewer.loaded && index.is_some() && viewer.active_entry == index;
         let active = loaded && viewer.shown && viewer.placement.is_some();
         let name = index
@@ -1737,10 +1931,27 @@ fn import(viewer: &Viewer, out: &mut Map<String, Value>) {
             });
         out.insert(format!("#bw_lib{row}_meta"), json!(meta));
     }
+    let count = viewer
+        .library
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !viewer.options.deleted_entries.contains(i))
+        .count();
+    out.insert(
+        "#bw_lib_page".into(),
+        json!(format!(
+            "{}/{}",
+            viewer.library_page + 1,
+            count.div_ceil(LIBRARY_ROWS).max(1)
+        )),
+    );
     out.insert("#bw_lib_title".into(), json!("Library"));
     out.insert(
         "#bw_lib_summary".into(),
-        json!(format!("{count} / {LIBRARY_ROWS} slots used")),
+        json!(format!(
+            "{count} / {} slots used",
+            schematica_core::blueprint::MAX_LIBRARY
+        )),
     );
     out.insert("#bw_lib_banner_visible".into(), json!(banner.is_some()));
     out.insert(
@@ -1849,12 +2060,19 @@ fn settings(viewer: &Viewer, out: &mut Map<String, Value>, controls: &mut Vec<Va
                 * 118.
         ),
     );
+    out.insert(
+        "#bw_render_all".into(),
+        json!(if radius == 0 { "All" } else { "Show all" }),
+    );
+    controls.push(json!({"id":"ghost-lightness", "value":viewer.options.lightness}));
     controls.push(json!({"id":"render-radius","value":if radius == 0 { 512 } else { radius }}));
     out.insert("#bw_set_title".into(), json!("Settings"));
     out.insert("#bw_set_summary".into(), json!("Saves immediately"));
     out.insert(
         "#bw_fp_mode".into(),
-        json!(if viewer.options.strict_place {
+        json!(if viewer.options.support_place {
+            "V3 Support"
+        } else if viewer.options.strict_place {
             "V2 Strict"
         } else {
             "V1 Classic"
@@ -2078,7 +2296,7 @@ mod tests {
         viewer.active_entry = Some(0);
         let mut out = Map::new();
         bindings(&viewer, &mut out, &mut Vec::new());
-        assert_eq!(out["#bw_lib_summary"], "3 / 8 slots used");
+        assert_eq!(out["#bw_lib_summary"], "3 / 16 slots used");
         assert_eq!(out["#bw_lib0_loaded"], true);
         assert_eq!(out["#bw_lib_banner_visible"], true);
         let blocks: u64 = viewer.materials.iter().map(|line| line.total).sum();
@@ -2116,7 +2334,7 @@ mod tests {
         viewer.browser_event(Tab::Settings.id(), 1.);
         let mut controls = Vec::new();
         bindings(&viewer, &mut Map::new(), &mut controls);
-        assert_eq!(controls.len(), SETTINGS.len() + 1); // switches plus render radius
+        assert_eq!(controls.len(), SETTINGS.len() + 2); // switches plus lightness and render radius
         for (key, _) in SETTINGS {
             let id = format!("{SETTING_PREFIX}{key}");
             let on = viewer.browser_setting_state(key);
@@ -2134,19 +2352,17 @@ mod tests {
                 "{key} flipped twice"
             );
         }
-        let strict = viewer.options.strict_place;
-        viewer.browser_event(MODE_ID, 1.);
-        assert_eq!(viewer.options.strict_place, !strict);
         let mut out = Map::new();
-        bindings(&viewer, &mut out, &mut Vec::new());
-        let label = if strict { "V1 Classic" } else { "V2 Strict" };
-        assert_eq!(out["#bw_fp_mode"], label);
-        assert_eq!(out["#bw_lightness"], "15%");
-        for expected in ["25%", "35%", "5%", "10%", "15%"] {
-            viewer.browser_event("lightness", 1.);
-            let mut out = Map::new();
+        for expected in ["V2 Strict", "V3 Support", "V1 Classic"] {
+            viewer.browser_event(MODE_ID, 1.);
             bindings(&viewer, &mut out, &mut Vec::new());
-            assert_eq!(out["#bw_lightness"], expected);
+            assert_eq!(out["#bw_fp_mode"], expected);
+        }
+        assert_eq!(out["#bw_lightness"], "5%");
+        for value in [0., 1., 7., 23., 100.] {
+            viewer.browser_event("ghost-lightness", value);
+            bindings(&viewer, &mut out, &mut Vec::new());
+            assert_eq!(out["#bw_lightness"], format!("{value}%"));
         }
         assert_eq!(out["#bw_target_info"], "Off");
         for expected in ["Regular", "Debug", "Off"] {
@@ -2156,7 +2372,9 @@ mod tests {
             assert_eq!(out["#bw_target_info"], expected);
         }
         let ids = routed_ids();
-        assert!(ids.iter().any(|routed| routed == "lightness"));
+        assert!(ids.iter().any(|routed| routed == "ghost-lightness"));
+        assert!(!ids.iter().any(|routed| routed == "bw-set-correct-aim"));
+        assert!(!ids.iter().any(|routed| routed == "bw-set-bridge-place"));
         assert!(ids.iter().any(|routed| routed == "target-info"));
         assert!(!ids.iter().any(|routed| routed == "bw-set-assist"));
         assert!(!ids.iter().any(|routed| routed == "opacity"));

@@ -51,6 +51,7 @@ impl Schematic {
                 palette.len()
             ));
         }
+        let palette = palette.into_iter().map(crate::normalization::for_building).collect();
         Ok(Self::from_validated(name, size, palette, blocks))
     }
 
@@ -153,6 +154,7 @@ impl Schematic {
     }
 
     fn intern(&mut self, state: BlockState) -> u32 {
+        let state = crate::normalization::for_building(state);
         let lookup = self.lookup.get_or_insert_with(|| {
             let mut lookup = HashMap::new();
             for (i, state) in self.palette.iter().enumerate() {

@@ -6,6 +6,8 @@ use std::{
     fs,
     path::Path,
 };
+#[path = "catalogue_categories.rs"]
+mod categories;
 fn read(name: &str, json: &str) -> BlockState {
     let v: serde_json::Value = serde_json::from_str(json).unwrap();
     let mut b = BlockState::new(name);
@@ -98,6 +100,15 @@ fn main() {
     let mut samples = Vec::new();
     for (name, states) in &groups {
         let mut b = states.iter().min_by_key(|b| score(b)).unwrap().clone();
+        // Start the ordinary catalogue with a horizontal facing; the separate
+        // orientation gallery includes the body-height-dependent vertical states.
+        if name == "minecraft:barrel" {
+            b.states
+                .insert("facing_direction".into(), StateValue::Int(2));
+        } else if name == "minecraft:crafter" {
+            b.states
+                .insert("orientation".into(), StateValue::Str("north_up".into()));
+        }
         if name == "minecraft:bed" {
             b.states
                 .insert(DISPLAY_COLOR_STATE.into(), StateValue::Byte(14));
@@ -160,7 +171,9 @@ fn main() {
                 .unwrap();
             let off = [[0, 0, 1], [-1, 0, 0], [0, 0, -1], [1, 0, 0]][q];
             pair = Some((std::array::from_fn(|i| p[i] + off[i]), "head_piece_bit"));
-        } else if b.states.get("upper_block_bit").and_then(n) == Some(0) {
+        } else if b.name != "minecraft:pale_moss_carpet"
+            && b.states.get("upper_block_bit").and_then(n) == Some(0)
+        {
             pair = Some(([p[0], p[1] + 1, p[2]], "upper_block_bit"));
         }
         if let Some((cell, key)) = pair {
@@ -206,9 +219,12 @@ fn main() {
     let encoded = blueprint::encode(&schematic).unwrap();
     let restored = blueprint::decode(&encoded).unwrap();
     let names: BTreeSet<_> = restored.palette().iter().map(|b| b.name.as_str()).collect();
-    assert_eq!(names.len(), groups.len());
     for name in groups.keys() {
-        assert!(names.contains(name.as_str()), "missing {name}");
+        let normalized = schematica_core::normalization::for_building(BlockState::new(name));
+        assert!(
+            names.contains(normalized.name.as_str()),
+            "missing {name}'s build equivalent"
+        );
     }
     assert_eq!(
         restored.layer_cells(schematica_core::LayerMode::All),
@@ -219,6 +235,7 @@ fn main() {
         .unwrap_or_else(|| "outputs/Latest/Schematics/test".into());
     let out = Path::new(&directory);
     fs::create_dir_all(out).unwrap();
+    categories::export(&out.join("Categorized"), &samples, &groups);
     fs::write(out.join("test.scb"), &encoded).unwrap();
     fs::write(
         out.join("blocks.json"),

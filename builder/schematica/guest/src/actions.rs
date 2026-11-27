@@ -65,7 +65,7 @@ impl Viewer {
                 return;
             }
             "correct-aim" => {
-                self.options.correct_aim = !self.options.correct_aim;
+                self.options.correct_aim = true;
                 self.options.save();
                 return;
             }
@@ -76,6 +76,12 @@ impl Viewer {
             }
             "hold-place" => {
                 self.options.hold_place = !self.options.hold_place;
+                self.options.save();
+                return;
+            }
+            "item-highlights" => {
+                self.options.item_highlights = !self.options.item_highlights;
+                self.highlight_dirty = true;
                 self.options.save();
                 return;
             }
@@ -91,7 +97,7 @@ impl Viewer {
                 return;
             }
             "bridge-place" => {
-                self.options.bridge_place = !self.options.bridge_place;
+                self.options.bridge_place = true;
                 self.options.save();
                 return;
             }
@@ -126,6 +132,12 @@ impl Viewer {
                 }
                 return;
             }
+            "move-forward" => "ViewForward",
+            "move-back" => "ViewBack",
+            "move-left" => "ViewLeft",
+            "move-right" => "ViewRight",
+            "move-up" => "PageUp",
+            "move-down" => "PageDown",
             "cw" => "KeyR",
             "ccw" => "RotateLeft",
             "mode" => "KeyL",

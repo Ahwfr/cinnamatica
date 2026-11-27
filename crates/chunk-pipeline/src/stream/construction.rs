@@ -106,6 +106,7 @@ impl WorldStream {
             pending_decode: VecDeque::new(),
             in_flight_decode_jobs: 0,
             predictions: prediction::DeferredPredictions::default(),
+            placement_receipts: Default::default(),
             decode_tx,
             decode_rx,
             biome_records: None,
@@ -397,11 +398,13 @@ impl WorldStream {
             }
             WorldEvent::BlockUpdates(updates) => {
                 for update in updates {
+                    self.placement_receipts.received(update);
                     self.authority.admit_dimension_range(update.dimension);
                 }
             }
             WorldEvent::SyncedBlockUpdates(updates) => {
                 for update in updates {
+                    self.placement_receipts.received(&update.update);
                     self.authority
                         .admit_dimension_range(update.update.dimension);
                 }

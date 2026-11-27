@@ -13,7 +13,7 @@ fn controls() -> Vec<Control> {
                 label: (*key).to_owned(),
                 value: *key == "fast-place",
             }),
-            Row::Cycle { .. } => None,
+            Row::Cycle { .. } | Row::Slider { .. } => None,
         })
         .collect()
 }
@@ -103,7 +103,7 @@ fn settings_rows_send_the_mods_control_events() {
         for row in rows {
             let id = match row {
                 Row::Switch(key) => format!("{SETTING_PREFIX}{key}"),
-                Row::Cycle { id, .. } => (*id).to_owned(),
+                Row::Cycle { id, .. } | Row::Slider { id, .. } => (*id).to_owned(),
             };
             let (_, bounds) = target(&screen, &id).unwrap_or_else(|| panic!("{id} missing"));
             assert!(
@@ -121,13 +121,13 @@ fn settings_rows_send_the_mods_control_events() {
     for (id, _) in TABS {
         assert!(target(&screen, id).is_some(), "{id}");
     }
-    let (_, lightness) = target(&screen, "lightness").unwrap();
+    let (_, lightness) = target(&screen, "ghost-lightness").unwrap();
     let centre = UiPoint::new(
         (lightness.min().x() + lightness.max().x()) * 0.5,
         (lightness.min().y() + lightness.max().y()) * 0.5,
     )
     .unwrap();
-    assert_eq!(screen.hit(centre).unwrap().id, "lightness");
+    assert_eq!(screen.hit(centre).unwrap().id, "ghost-lightness");
     for removed in ["hotkeys", "ui-layout"] {
         assert!(target(&screen, removed).is_none(), "{removed}");
     }
@@ -167,6 +167,12 @@ fn controls_tab_sends_every_placement_action() {
         let mut screen = CinnamaticaScreen::default();
         paint(&mut screen, CONTROLS_TAB as f64, size);
         for id in [
+            "move-forward",
+            "move-back",
+            "move-left",
+            "move-right",
+            "move-up",
+            "move-down",
             "place",
             "ccw",
             "cw",

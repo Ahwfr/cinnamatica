@@ -90,7 +90,7 @@ impl Piece {
                     },
                     render_model::BannerMount::Wall,
                 ),
-                base: assets::banner::color_linear(i64::from(15 - color)),
+                base: assets::banner::color_unit(i64::from(15 - color)),
                 layers: std::sync::Arc::from([]),
             }),
             Self::Pot(facing) => BlockEntityKind::DecoratedPot(render_model::DecoratedPotModel {

@@ -6,6 +6,8 @@ use anyhow::{Result, bail};
 pub(super) struct ItemUsePolicy {
     pending_pulse: bool,
     pending_placement: Option<crate::CreativePlacementOffer>,
+    pending_supports: Option<Vec<crate::CreativePlacementOffer>>,
+    pub supports: Option<Vec<crate::CreativePlacementOffer>>,
     pending_lock: bool,
     pub locked: bool,
     writes: u32,
@@ -22,12 +24,79 @@ impl ItemUsePolicy {
     pub fn commit(&mut self, gameplay: bool) {
         self.pulse = std::mem::take(&mut self.pending_pulse) && gameplay;
         self.placement = self.pending_placement.take().filter(|_| gameplay);
+        self.supports = self
+            .pending_supports
+            .take()
+            .filter(|_| gameplay && self.placement.is_some());
         self.locked = std::mem::take(&mut self.pending_lock) && gameplay;
         self.prediction_wanted = std::mem::take(&mut self.pending_prediction_wanted) && gameplay;
     }
 }
 
 impl cinnabar::extension::item_use::Host for State {
+    fn offer_placement_supports(
+        &mut self,
+        blocks: Vec<cinnabar::extension::item_use::SupportBlock>,
+    ) -> Result<Result<(), String>> {
+        self.controls.budget(false)?;
+        self.item_use_policy.writes += 1;
+        if self.item_use_policy.writes > MAX_IMPORT_WRITES {
+            bail!("item-use import budget exhausted");
+        }
+        if !self.grants.item_use
+            || !self.grants.inventory
+            || !self.grants.terrain
+            || self.snapshot.is_none()
+            || !self.controls.frame.focused
+            || !self.controls.frame.gameplay
+            || self.controls.frame.panel_open
+        {
+            return Ok(Err(
+                "Support placement requires focused gameplay, item use, inventory and terrain"
+                    .into(),
+            ));
+        }
+        let Some(root) = self.item_use_policy.pending_placement.as_ref() else {
+            return Ok(Err("No admitted placement offer in this frame".into()));
+        };
+        let mut accepted = Vec::with_capacity(blocks.len().min(32));
+        let mut seen = std::collections::HashSet::new();
+        let mut bytes = 0usize;
+        if blocks.len() > 32 {
+            return Ok(Err("Too many support guide cells".into()));
+        }
+        for block in blocks {
+            let p = [block.position.0, block.position.1, block.position.2];
+            let distance: u64 = p
+                .iter()
+                .zip(root.position)
+                .map(|(a, b)| a.abs_diff(b) as u64)
+                .sum();
+            bytes = bytes
+                .saturating_add(block.name.len())
+                .saturating_add(block.states.len());
+            if !(1..=2).contains(&distance)
+                || !seen.insert(p)
+                || p.iter().any(|v| v.unsigned_abs() > 30_000_000)
+                || !block.name.starts_with("minecraft:")
+                || block.name.len() > 128
+                || block.states.len() > 2048
+                || bytes > 16 * 1024
+            {
+                return Ok(Err("Invalid support guide cells".into()));
+            }
+            accepted.push(crate::CreativePlacementOffer {
+                position: p,
+                name: block.name,
+                states: block.states,
+                correct_aim: true,
+                strict_state: true,
+                repeat_while_held: true,
+            });
+        }
+        self.item_use_policy.pending_supports = Some(accepted);
+        Ok(Ok(()))
+    }
     fn read_placement_cell(&mut self) -> Result<Result<Option<(i32, i32, i32)>, String>> {
         self.controls.budget(false)?;
         if !self.grants.item_use || !self.grants.terrain {
@@ -168,6 +237,9 @@ impl State {
         {
             return Ok(Err("invalid Creative placement offer".into()));
         }
+        // Support context belongs to exactly this offer, never to an earlier offer
+        // overwritten by the same callback.
+        self.item_use_policy.pending_supports = None;
         self.item_use_policy.pending_placement = Some(crate::CreativePlacementOffer {
             position,
             name,

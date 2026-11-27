@@ -202,11 +202,14 @@ pub(super) fn reference_viewer() -> Viewer {
             fast_place: true,
             correct_aim: false,
             strict_place: false,
+            support_place: false,
+            materials_layer: false,
             placement_lock: false,
             hold_place: false,
             auto_layer: true,
             paste_destroy: false,
             remember_placement: false,
+            item_highlights: true,
             saved_placements: BTreeMap::new(),
             tool_item: false,
             bridge_place: true,
@@ -252,11 +255,14 @@ fn menu_edits_turn_the_guide_and_select_layer_ranges() {
             fast_place: false,
             correct_aim: false,
             strict_place: false,
+            support_place: false,
+            materials_layer: false,
             placement_lock: false,
             hold_place: false,
             auto_layer: true,
             paste_destroy: false,
             remember_placement: false,
+            item_highlights: true,
             saved_placements: BTreeMap::new(),
             tool_item: false,
             bridge_place: true,
@@ -429,18 +435,21 @@ fn material_page_counts_finish_over_multiple_frames() {
         registry: 1,
         revision: 0,
     });
-    // Thirty-two tiles are counted per call: three calls for seventy. Nothing is built, so
-    // the first row (cobblestone, 49 in the schematic) has all 49 left, not 0.
-    for pending in [true, true, false] {
+    // Palette reads are also bounded, so a material with thousands of states cannot
+    // consume one entire callback inside a single tile. Finish without closing.
+    let mut calls = 0;
+    loop {
         let mut bindings = serde_json::Map::new();
         browser::bindings(&viewer, &mut bindings, &mut Vec::new());
-        assert_eq!(viewer.material_counts_pending(), pending);
-        assert_eq!(
-            bindings["#bw_row0_needed"],
-            if pending { "…" } else { "49" }
-        );
+        calls += 1;
+        if !viewer.material_counts_pending() {
+            assert_eq!(bindings["#bw_row0_needed"], "49");
+            break;
+        }
+        assert_eq!(bindings["#bw_row0_needed"], "…");
+        assert!(calls < 100);
     }
-    // A finished page is remembered: asking again counts nothing.
+    assert!(calls > 1); // A finished page is remembered: asking again counts nothing.
     let mut bindings = serde_json::Map::new();
     browser::bindings(&viewer, &mut bindings, &mut Vec::new());
     assert_eq!(bindings["#bw_row0_needed"], "49");
@@ -501,7 +510,7 @@ fn aiming_at_a_tall_plant_upper_half_places_the_matching_pair() {
 #[test]
 fn ghost_lightness_loads_bounded_and_ignores_older_settings() {
     use serde_json::json;
-    assert_eq!(DEFAULT_LIGHTNESS, 15);
+    assert_eq!(DEFAULT_LIGHTNESS, 5);
     assert_eq!(
         saved_lightness(&json!({ "opacity": 90 })),
         DEFAULT_LIGHTNESS
@@ -511,8 +520,8 @@ fn ghost_lightness_loads_bounded_and_ignores_older_settings() {
         DEFAULT_LIGHTNESS
     );
     assert_eq!(saved_lightness(&json!({ "ghost_tint": 25 })), 25);
-    assert_eq!(saved_lightness(&json!({ "ghost_tint": 99 })), 35);
-    assert_eq!(saved_lightness(&json!({ "ghost_tint": 0 })), 5);
+    assert_eq!(saved_lightness(&json!({ "ghost_tint": 99 })), 99);
+    assert_eq!(saved_lightness(&json!({ "ghost_tint": 0 })), 0);
 }
 
 #[test]

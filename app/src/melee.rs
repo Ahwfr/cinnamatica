@@ -80,6 +80,7 @@ pub(crate) fn complete_melee_actor_frame(
 
 #[derive(SystemParam)]
 pub(crate) struct MeleeContext<'w, 's> {
+    support_assist: Option<Res<'w, crate::block_use::creative::CreativePlacement>>,
     pub(crate) input: Res<'w, SemanticInputSnapshot>,
     ordered: Option<Res<'w, crate::ordered_interactions::InteractionRuntime>>,
     pub(crate) origin: Res<'w, InteractionOriginSnapshot>,
@@ -192,7 +193,11 @@ pub(crate) fn prepare_melee(
     if let Err(reason) = press_admission(
         focused && !context.focus.ui_focused,
         player_runtime.facts.player_game_mode(),
-        item_use.vetoes_attack(&player_runtime, context.client_world.stream.as_ref()),
+        item_use.vetoes_build_action(
+            &player_runtime,
+            &context.ui,
+            context.client_world.stream.as_ref(),
+        ),
     ) {
         drop(reason);
         runtime.cancel();
@@ -344,34 +349,65 @@ fn maintain_attacks(
     let active = gameplay::survival_mining::mining_active(caps, focused, input.is_some());
     // An item in use ignores a held Attack as it ignores a press, so no held mining starts or
     // continues; queued work already accepted still drains and an existing destroy aborts.
+    let physical_attack = crate::ordered_interactions::build_held(
+        context.ordered.as_deref(),
+        &context.input,
+        Action::Attack,
+    );
+    let physical_use = crate::ordered_interactions::build_held(
+        context.ordered.as_deref(),
+        &context.input,
+        Action::Use,
+    );
+    let cleanup = (!physical_attack && !physical_use && focused && !context.focus.ui_focused)
+        .then(|| {
+            context
+                .support_assist
+                .as_deref()
+                .zip(context.client_world.stream.as_ref())
+                .and_then(|(policy, stream)| {
+                    crate::block_use::support::cleanup_goal(policy, stream)
+                })
+        })
+        .flatten();
     let attack_held = active
-        && !item_use.vetoes_attack(&player, context.client_world.stream.as_ref())
+        && !item_use.vetoes_build_action(
+            &player,
+            &context.ui,
+            context.client_world.stream.as_ref(),
+        )
         && (context
             .mod_interaction
             .as_ref()
             .is_some_and(|request| request.block_mining)
+            || cleanup.is_some()
             || crate::ordered_interactions::build_held(
                 context.ordered.as_deref(),
                 &context.input,
                 Action::Attack,
             ));
-    let requested = context
-        .mod_interaction
-        .as_ref()
-        .and_then(|request| request.block_mining_target)
-        .filter(|_| {
-            crate::ordered_interactions::build_held(
-                context.ordered.as_deref(),
-                &context.input,
-                Action::Attack,
-            )
+    let requested = cleanup
+        .map(|(pos, _)| pos.map(|v| v as f32 + 0.5))
+        .or_else(|| {
+            context
+                .mod_interaction
+                .as_ref()
+                .and_then(|request| request.block_mining_target)
+                .filter(|_| {
+                    crate::ordered_interactions::build_held(
+                        context.ordered.as_deref(),
+                        &context.input,
+                        Action::Attack,
+                    )
+                })
         });
-    let directed = requested.is_some()
-        && target
-            .attack
-            .is_some_and(|pick| !matches!(pick.crosshair, gameplay::melee::Crosshair::Actor(_)))
-        && !selected_attack_timing(&player, &context.client_world)
-            .is_some_and(|item| item.piercing_weapon);
+    let directed = cleanup.is_some()
+        || requested.is_some()
+            && target.attack.is_some_and(|pick| {
+                !matches!(pick.crosshair, gameplay::melee::Crosshair::Actor(_))
+            })
+            && !selected_attack_timing(&player, &context.client_world)
+                .is_some_and(|item| item.piercing_weapon);
     let wants_target = active
         && (directed || !runtime.actor_in_front())
         && (attack_held || runtime.press_pending());
@@ -420,6 +456,10 @@ fn maintain_attacks(
             requested
                 .is_none_or(|point| target.position == point.map(|v| v.floor() as i32))
                 .then_some(target)
+                .filter(|target| {
+                    cleanup
+                        .is_none_or(|(pos, id)| target.position == pos && target.runtime_id == id)
+                })
         }
         _ => None,
     };

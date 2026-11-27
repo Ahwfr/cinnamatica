@@ -1428,6 +1428,15 @@ fn compare(
         }
         // Fast Place builds a double slab as the full block of its material.
         (false, false) if built_as_full_block(&expected.name, name) => CellStatus::Correct,
+        // Obtainable item variants are useful for building but are not the
+        // requested final world state (for example a detector still to invert).
+        (false, false)
+            if name != expected.name
+                && crate::unlit_name(name).unwrap_or(name)
+                    == crate::unlit_name(&expected.name).unwrap_or(&expected.name) =>
+        {
+            CellStatus::WrongState
+        }
         // A powered or lit block counts as its plain block; the world lights it.
         (false, false)
             if name != expected.name
@@ -1741,7 +1750,16 @@ fn create_borrowed(
         material: None,
         clip: None,
         params,
-        anchor: draw::Anchor::Block(anchor),
+        // This is independent schematic geometry, not a marker owned by the
+        // terrain block at the origin. Unloading that chunk must not hide it.
+        anchor: draw::Anchor::World(draw::WorldAnchor {
+            dimension: anchor.dimension,
+            origin: (
+                f64::from(anchor.position.0),
+                f64::from(anchor.position.1),
+                f64::from(anchor.position.2),
+            ),
+        }),
         transform: draw::Transform {
             translation: (0., 0., 0.),
             rotation: (0., 0., 0., 1.),
@@ -2032,6 +2050,27 @@ fn region_of(names: &[&str]) -> terrain::Region {
         shape_boxes: Vec::new(),
         overrides: Vec::new(),
     }
+}
+
+#[test]
+fn an_obtainable_detector_stays_yellow_until_manually_inverted() {
+    let world = region_of(&[
+        "minecraft:daylight_detector",
+        "minecraft:daylight_detector_inverted",
+    ]);
+    let expected = block("minecraft:daylight_detector_inverted");
+    assert_eq!(
+        compare_cell(&world, 0, &expected, false).0,
+        CellStatus::WrongState
+    );
+    assert_eq!(
+        compare_cell(&world, 1, &expected, false).0,
+        CellStatus::Correct
+    );
+    assert_eq!(
+        crate::unlit_name(&expected.name),
+        Some("minecraft:daylight_detector")
+    );
 }
 
 #[cfg(test)]

@@ -58,6 +58,8 @@ pub(crate) struct ItemUseContext<'w, 's> {
     client_world: Res<'w, ClientWorld>,
     melee: Res<'w, MeleeRuntime>,
     block_use: Res<'w, BlockUseRuntime>,
+    /// Whether the aimed block's own use takes the held Use from the item.
+    press_target: crate::block_use::UsePressTarget<'w>,
     effects: Res<'w, LocalMovementEffectTimeline>,
     physics: Option<ResMut<'w, client_interaction::movement::LocalPhysicsController>>,
     weather: Option<Res<'w, render_scene::AtmosphereViewInputs>>,
@@ -86,7 +88,7 @@ pub(crate) fn produce_item_use(
 /// simulates a movement tick, as vanilla's movement-tick start-or-stop system
 /// does; frames without a tick leave the write pending.
 pub(crate) fn adopt_server_item_use(
-    player_runtime: Res<client_state::PlayerRuntime>,
+    mut player_runtime: ResMut<client_state::PlayerRuntime>,
     mut context: ItemUseContext,
     mut runtime: ResMut<ItemUseRuntime>,
     mut movement: ResMut<MovementTicker>,
@@ -178,7 +180,7 @@ pub(crate) fn adopt_server_item_use(
     let mut pending = gameplay::item_use::PendingUseInput::new(false);
     runtime.with_pending_input(&mut pending, |runtime| {
         let Some(proposal) = frame::observe(
-            &player_runtime,
+            &mut player_runtime,
             &context,
             runtime,
             &movement,
@@ -313,7 +315,7 @@ fn produce_use(
         sample: None,
     };
     let Some(frozen) = frame::observe(
-        &player_runtime,
+        &mut player_runtime,
         &context,
         &mut runtime,
         &movement,

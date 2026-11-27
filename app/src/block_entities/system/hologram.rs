@@ -77,11 +77,7 @@ impl HologramPieces {
         let mut next = Vec::with_capacity(self.cache.len());
         for resources in retained {
             for instance in resources.instances.values() {
-                let Anchor::Block {
-                    dimension: anchored,
-                    position,
-                } = instance.anchor
-                else {
+                let Some((anchored, position)) = grid_origin(instance.anchor) else {
                     continue;
                 };
                 if anchored != dimension
@@ -145,6 +141,25 @@ impl HologramPieces {
             }
         }
         self.cache = next;
+    }
+}
+
+/// World-anchored schematics survive unloading their origin chunk. Native
+/// block-entity pieces still need integral cell coordinates for the world check.
+fn grid_origin(anchor: Anchor) -> Option<(i32, [i32; 3])> {
+    match anchor {
+        Anchor::Block {
+            dimension,
+            position,
+        } => Some((dimension, position)),
+        Anchor::World { dimension, origin }
+            if origin.iter().all(|v| {
+                v.is_finite() && v.fract() == 0. && *v >= i32::MIN as f64 && *v <= i32::MAX as f64
+            }) =>
+        {
+            Some((dimension, origin.map(|v| v as i32)))
+        }
+        _ => None,
     }
 }
 
@@ -299,6 +314,31 @@ fn pair_chests(found: &mut [([i32; 3], Piece)]) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn independent_world_grids_keep_integral_native_model_positions() {
+        use super::*;
+        assert_eq!(
+            grid_origin(Anchor::World {
+                dimension: 2,
+                origin: [-128., 70., 256.]
+            }),
+            Some((2, [-128, 70, 256]))
+        );
+        assert!(
+            grid_origin(Anchor::World {
+                dimension: 0,
+                origin: [0.5, 0., 0.]
+            })
+            .is_none()
+        );
+        assert!(
+            grid_origin(Anchor::World {
+                dimension: 0,
+                origin: [f64::NAN, 0., 0.]
+            })
+            .is_none()
+        );
+    }
     use super::*;
 
     fn chest(facing: Facing) -> Piece {

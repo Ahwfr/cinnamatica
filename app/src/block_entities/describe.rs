@@ -4,7 +4,7 @@ mod item;
 use item::{held_item, map_id};
 
 use assets::{
-    banner::{MAX_BANNER_LAYERS, color_linear as banner_color, pattern_texture},
+    banner::{MAX_BANNER_LAYERS, color_unit as banner_color, pattern_texture},
     block_entity_geometry::shulker_color_from_block_name,
     facts::{BlockEntityBacking, BlockEntityMount, BlockEntityRenderer, BlockProperty},
 };
@@ -93,7 +93,11 @@ pub(super) enum Template {
         active: bool,
         hunting: bool,
     },
-    Beacon,
+    /// A beacon draws its beam when active. A server that reports `Levels` decides that itself;
+    /// one that omits it (Bedrock Dedicated Server) leaves the client to read the pyramid.
+    Beacon {
+        levels_reported: bool,
+    },
     Chest(ChestModel),
     Shulker(ShulkerModel),
     /// A piston head, which moves from its reported extension toward its state's end.
@@ -389,7 +393,12 @@ pub(super) fn describe(
                 .unwrap_or(0),
         }),
         BlockEntityRenderer::Beacon => {
-            (nbt.integer("Levels").unwrap_or(0) > 0).then_some(Template::Beacon)
+            let levels = nbt.integer("Levels");
+            levels
+                .is_none_or(|levels| levels > 0)
+                .then_some(Template::Beacon {
+                    levels_reported: levels.is_some(),
+                })
         }
         BlockEntityRenderer::ItemFrame | BlockEntityRenderer::GlowItemFrame => {
             let outward = u8::try_from(state.int("facing_direction")?).ok()?;

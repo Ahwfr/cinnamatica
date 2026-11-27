@@ -49,6 +49,14 @@ const LIBRARY_ROWS: usize = 8;
 #[derive(Clone, Copy)]
 enum Row {
     Switch(&'static str),
+    Slider {
+        id: &'static str,
+        title: &'static str,
+        value: &'static str,
+        min: u16,
+        max: u16,
+        step: u16,
+    },
     Cycle {
         id: &'static str,
         title: &'static str,
@@ -70,8 +78,6 @@ const GROUPS: [(&str, &[Row]); 3] = [
             cycle("bw-fp-mode", "Fast Place mode", "#bw_fp_mode"),
             Row::Switch("hold-place"),
             Row::Switch("placement-lock"),
-            Row::Switch("correct-aim"),
-            Row::Switch("bridge-place"),
         ],
     ),
     (
@@ -79,7 +85,23 @@ const GROUPS: [(&str, &[Row]); 3] = [
         &[
             Row::Switch("look"),
             cycle("target-info", "Target info", "#bw_target_info"),
-            cycle("lightness", "Ghost lightness", "#bw_lightness"),
+            Row::Slider {
+                id: "ghost-lightness",
+                title: "Ghost lightness",
+                value: "#bw_lightness",
+                min: 0,
+                max: 100,
+                step: 1,
+            },
+            Row::Slider {
+                id: "render-radius",
+                title: "Render range",
+                value: "#bw_range",
+                min: 16,
+                max: 512,
+                step: 16,
+            },
+            cycle("render-all", "Full schematic", "#bw_render_all"),
         ],
     ),
     (
@@ -87,7 +109,7 @@ const GROUPS: [(&str, &[Row]); 3] = [
         &[
             Row::Switch("remember-placement"),
             Row::Switch("auto-layer"),
-            Row::Switch("paste-destroy"),
+            Row::Switch("item-highlights"),
         ],
     ),
 ];
@@ -304,7 +326,9 @@ impl Window<'_> {
         widgets::screen_overlay(canvas, size)?;
         let rows = GROUPS[0].1.len() as f32;
         let right = (GROUPS[1].1.len() + GROUPS[2].1.len()) as f32;
-        let body = (SECTION + ROW * rows).max(SECTION * 2.0 + ROW * right);
+        let body = (SECTION + ROW * rows)
+            .max(SECTION * 2.0 + ROW * right)
+            .max(40.0);
         let height = HEADER + TAB_HEIGHT + PAD * 2.0 + body + FOOTER;
         let margin = canvas.r(2.4);
         let scale = ((size[1] - margin * 2.0) / canvas.r(height))
@@ -414,9 +438,23 @@ impl Window<'_> {
     ) -> Result<(), PaintError> {
         let pad = canvas.r(PAD);
         let [left, right] = [card[0] + pad, card[2] - pad];
-        let field = [right - canvas.r(22.0), top, right, top + canvas.r(BUTTON)];
+        let field = [right - canvas.r(20.0), top, right, top + canvas.r(BUTTON)];
+        let scope = [
+            field[0] - canvas.r(17.0) - pad,
+            top,
+            field[0] - pad,
+            top + canvas.r(BUTTON),
+        ];
+        self.button(
+            canvas,
+            "materials-scope",
+            self.text("#bw_material_scope"),
+            scope,
+            Variant::Secondary,
+            hits,
+        )?;
         self.search_field(canvas, field, hits)?;
-        let y = self.heading(canvas, "bw", [left, top], field[0] - left - pad)?;
+        let y = self.heading(canvas, "bw", [left, top], scope[0] - left - pad)?;
 
         // Progress: a bar, the built fraction beside it and the page on the right.
         let bar = [
@@ -466,20 +504,8 @@ impl Window<'_> {
             TEXT_DIMMEST,
         )?;
         let have_right = needed_right - canvas.r(11.2);
-        self.right_text(
-            canvas,
-            "Have",
-            [have_right, head],
-            CAPTION,
-            TEXT_DIMMEST,
-        )?;
-        self.right_text(
-            canvas,
-            "Left",
-            [needed_right, head],
-            CAPTION,
-            TEXT_DIMMEST,
-        )?;
+        self.right_text(canvas, "Have", [have_right, head], CAPTION, TEXT_DIMMEST)?;
+        self.right_text(canvas, "Left", [needed_right, head], CAPTION, TEXT_DIMMEST)?;
         self.right_text(
             canvas,
             "Total",
@@ -728,7 +754,7 @@ impl Window<'_> {
         )
     }
 
-    /// Controls: Position, Rotate & Mirror and Guide columns, and Paste with its confirmation.
+    /// Three aligned control groups, followed by a separate Paste section.
     fn controls(
         &self,
         canvas: &mut Canvas<'_>,
@@ -737,156 +763,149 @@ impl Window<'_> {
         hits: &mut Hits,
     ) -> Result<(), PaintError> {
         let pad = canvas.r(PAD);
-        let [left, right] = [card[0] + pad, card[2] - pad];
+        let (left, right) = (card[0] + pad, card[2] - pad);
         let y = self.heading(canvas, "bw_keys", [left, top], right - left)?;
-        let column = (right - left - pad * 2.0) / 3.0;
+        let width = (right - left - pad * 2.) / 3.;
         let gap = canvas.r(GAP);
-        let half = (column - gap) * 0.5;
         let step = canvas.r(BUTTON) + gap;
         let rows = y + canvas.r(SECTION);
-        let [height, layers, gap_after_hint] = [canvas.r(BUTTON), canvas.r(2.4), canvas.r(1.6)];
+        let columns = [left, left + width + pad, left + (width + pad) * 2.];
+        for (title, x) in ["Move · 1 block", "Rotate & guide", "Layers"]
+            .into_iter()
+            .zip(columns)
+        {
+            canvas.text_line(title, [x, y], width, SECTION_HEADER, TEXT)?;
+        }
+        let button_height = canvas.r(BUTTON);
         let wide = |x: f32, line: f32| {
-            let y = rows + step * line;
-            [x, y, x + column, y + height]
+            [
+                x,
+                rows + line * step,
+                x + width,
+                rows + line * step + button_height,
+            ]
         };
         let pair = |x: f32, line: f32| {
             let b = wide(x, line);
+            let half = (width - gap) * 0.5;
             (
                 [b[0], b[1], b[0] + half, b[3]],
                 [b[2] - half, b[1], b[2], b[3]],
             )
         };
-        let columns = [left, left + column + pad, left + (column + pad) * 2.0];
-        for (title, x) in ["Position", "Rotate & Mirror", "Guide"]
-            .into_iter()
-            .zip(columns)
-        {
-            canvas.text_line(title, [x, y + canvas.r(0.4)], column, SECTION_HEADER, TEXT)?;
-        }
         let neutral = Variant::Secondary;
-
         let [a, b, c] = columns;
-        self.button(canvas, "place", "Place here", wide(a, 0.0), neutral, hits)?;
-        canvas.text(
-            "Numpad 8/4/6/2 move, 7/9 down/up, 1/3 rotate.",
-            [a, rows + step + canvas.r(0.2)],
-            column,
-            CAPTION,
-            TEXT_DIMMEST,
-            false,
-        )?;
-
-        let (ccw, cw) = pair(b, 0.0);
-        self.button(canvas, "ccw", "Rotate left", ccw, neutral, hits)?;
-        self.button(canvas, "cw", "Rotate right", cw, neutral, hits)?;
-        self.button(canvas, "mirror", "Mirror", wide(b, 1.0), neutral, hits)?;
-        canvas.text_line(
-            "Layers",
-            [b, rows + step * 2.0 + canvas.r(0.6)],
-            column,
-            CAPTION,
-            TEXT_DIMMER,
-        )?;
-        let (previous, next) = pair(b, 2.0);
-        let shift = |bounds: Bounds| [bounds[0], bounds[1] + layers, bounds[2], bounds[3] + layers];
-        self.button(
-            canvas,
-            "previous-layer",
-            "Prev",
-            shift(previous),
-            neutral,
-            hits,
-        )?;
-        self.button(canvas, "next-layer", "Next", shift(next), neutral, hits)?;
-        let mode = shift(wide(b, 3.0));
-        self.button(
-            canvas,
-            "mode",
-            self.text("#bw_layer_mode"),
-            mode,
-            neutral,
-            hits,
-        )?;
-
+        self.button(canvas, "place", "Place here", wide(a, 0.), neutral, hits)?;
+        for (row, ids, titles) in [
+            (1., ["move-forward", "move-back"], ["Forward", "Back"]),
+            (2., ["move-left", "move-right"], ["Left", "Right"]),
+            (3., ["move-down", "move-up"], ["Down", "Up"]),
+        ] {
+            let (lo, hi) = pair(a, row);
+            self.button(canvas, ids[0], titles[0], lo, neutral, hits)?;
+            self.button(canvas, ids[1], titles[1], hi, neutral, hits)?;
+        }
+        let (lo, hi) = pair(b, 0.);
+        self.button(canvas, "ccw", "Left 90°", lo, neutral, hits)?;
+        self.button(canvas, "cw", "Right 90°", hi, neutral, hits)?;
+        self.button(canvas, "mirror", "Mirror", wide(b, 1.), neutral, hits)?;
         let locked = self.flag("#bw_lock_on");
         self.button(
             canvas,
             "lock",
             if locked {
-                "Lock guide: ON"
+                "Position locked"
             } else {
-                "Lock guide: OFF"
+                "Lock position"
             },
-            wide(c, 0.0),
+            wide(b, 2.),
             if locked { Variant::Primary } else { neutral },
             hits,
         )?;
-        canvas.text(
-            "Stops moves and rotation. Not Placement lock.",
-            [c, rows + step + canvas.r(0.2)],
-            column,
-            CAPTION,
-            TEXT_DIMMEST,
-            false,
-        )?;
-        let after = |line: f32| {
-            let bounds = wide(c, line);
-            [
-                bounds[0],
-                bounds[1] + gap_after_hint,
-                bounds[2],
-                bounds[3] + gap_after_hint,
-            ]
-        };
         self.button(
             canvas,
             "visibility",
             self.text("#bw_visibility"),
-            after(2.0),
+            wide(b, 3.),
             neutral,
             hits,
         )?;
-
-        let paste_top = mode[3] + canvas.r(1.2);
-        let paste = [
-            left,
-            paste_top,
-            left + canvas.r(16.0),
-            paste_top + canvas.r(BUTTON),
-        ];
-        let confirming = self.text("#bw_paste") != "Paste";
+        let (lo, hi) = pair(c, 0.);
+        self.button(canvas, "previous-layer", "Previous −", lo, neutral, hits)?;
+        self.button(canvas, "next-layer", "Next +", hi, neutral, hits)?;
+        self.button(
+            canvas,
+            "mode",
+            self.text("#bw_layer_mode"),
+            wide(c, 1.),
+            neutral,
+            hits,
+        )?;
+        self.switch_row(canvas, "auto-layer", wide(c, 2.), hits)?;
+        canvas.text(
+            "Movement follows your viewing direction.",
+            [c, rows + step * 3.],
+            width,
+            CAPTION,
+            TEXT_DIMMEST,
+            false,
+        )?;
+        let paste_top = rows + step * 4. + canvas.r(1.);
+        canvas.text_line(
+            "Paste",
+            [left, paste_top],
+            right - left,
+            SECTION_HEADER,
+            TEXT,
+        )?;
+        self.switch_row(
+            canvas,
+            "paste-destroy",
+            [
+                left,
+                paste_top + canvas.r(SECTION),
+                right,
+                paste_top + canvas.r(SECTION + ROW),
+            ],
+            hits,
+        )?;
+        let y = paste_top + canvas.r(SECTION + ROW) + gap;
+        let end = left + canvas.r(16.);
         self.button(
             canvas,
             "paste",
             self.text("#bw_paste"),
-            paste,
-            if confirming {
+            [left, y, end, y + canvas.r(BUTTON)],
+            if self.text("#bw_paste") != "Paste" {
                 Variant::Destructive
             } else {
                 neutral
             },
             hits,
         )?;
-        let mode_left = paste[2] + pad;
-        let mode_right = mode_left + canvas.r(14.0);
+        let mode_left = end + pad;
         self.button(
             canvas,
             "bw-export",
             self.text("#bw_export"),
-            [mode_left, paste_top, mode_right, paste[3]],
+            [
+                mode_left,
+                y,
+                mode_left + canvas.r(15.),
+                y + canvas.r(BUTTON),
+            ],
             neutral,
             hits,
         )?;
         canvas.text_line(
             self.text("#bw_paste_hint"),
-            [mode_right + pad, paste_top + canvas.r(0.6)],
-            right - mode_right - pad,
+            [mode_left + canvas.r(15.) + pad, y + canvas.r(0.6)],
+            right - mode_left - canvas.r(15.) - pad,
             CAPTION,
             TEXT_DIMMER,
         )?;
         Ok(())
     }
-
     /// Fast Place on the left; Display and Behavior stacked on the right.
     fn settings(
         &self,
@@ -921,6 +940,14 @@ impl Window<'_> {
             let b = [x, y, x + width, y + canvas.r(ROW)];
             match *row {
                 Row::Switch(key) => self.switch_row(canvas, key, b, hits)?,
+                Row::Slider {
+                    id,
+                    title,
+                    value,
+                    min,
+                    max,
+                    step,
+                } => self.slider_row(canvas, id, title, value, min, max, step, b, hits)?,
                 Row::Cycle { id, title, caption } => {
                     self.cycle_row(canvas, id, title, self.text(caption), b, hits)?;
                 }
@@ -928,6 +955,68 @@ impl Window<'_> {
             y = b[3];
         }
         Ok(y + canvas.r(0.8))
+    }
+
+    /// Clickable one-percent/one-step slider. Hit cells are narrow and disjoint,
+    /// so the click's position determines its exact value rather than cycling presets.
+    #[allow(clippy::too_many_arguments)]
+    fn slider_row(
+        &self,
+        canvas: &mut Canvas<'_>,
+        id: &str,
+        title: &str,
+        value: &str,
+        min: u16,
+        max: u16,
+        step: u16,
+        b: Bounds,
+        hits: &mut Hits,
+    ) -> Result<(), PaintError> {
+        let shown = self.text(value);
+        let caption = if shown.starts_with(title) {
+            shown.to_string()
+        } else {
+            format!("{title}: {shown}")
+        };
+        canvas.text_line(&caption, [b[0], b[1]], b[2] - b[0], CAPTION, TEXT_DIMMER)?;
+        let track = [b[0], b[1] + canvas.r(2.2), b[2], b[3] - canvas.r(0.5)];
+        canvas.fill(track, NEUTRAL90)?;
+        let current = self
+            .input
+            .controls
+            .iter()
+            .find_map(|control| match control {
+                Control::Slider { id: key, value, .. } if key == id => Some(*value),
+                _ => None,
+            })
+            .unwrap_or(min as f32);
+        let progress = ((current - min as f32) / (max - min) as f32).clamp(0., 1.);
+        let x = track[0] + progress * (track[2] - track[0]);
+        canvas.fill([track[0], track[1], x, track[3]], PRIMARY_ROLE.fill)?;
+        canvas.fill(
+            [
+                x - canvas.r(0.15),
+                track[1] - canvas.r(0.3),
+                x + canvas.r(0.15),
+                track[3] + canvas.r(0.3),
+            ],
+            TEXT,
+        )?;
+        let steps = (max - min) / step;
+        for i in 0..=steps {
+            let lo = (i as f32 - 0.5).max(0.) / steps as f32;
+            let hi = (i as f32 + 0.5).min(steps as f32) / steps as f32;
+            hits.push((
+                hit(id, (min + i * step) as f32),
+                [
+                    track[0] + lo * (track[2] - track[0]),
+                    b[1] + canvas.r(1.4),
+                    track[0] + hi * (track[2] - track[0]),
+                    b[3],
+                ],
+            ));
+        }
+        Ok(())
     }
 
     /// A row titled by its switch, which flips when any part of the row is clicked.

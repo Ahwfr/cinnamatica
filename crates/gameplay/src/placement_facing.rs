@@ -61,7 +61,10 @@ pub fn standing_hint(
     predicted: &str,
 ) -> Option<&'static str> {
     let observer = name == "minecraft:observer";
-    if !(observer || dispenser_like(fact) || fact.placement == assets::facts::PlacementRule::Piston)
+    if !(observer
+        || matches!(name, "minecraft:barrel" | "minecraft:crafter")
+        || dispenser_like(fact)
+        || fact.placement == assets::facts::PlacementRule::Piston)
     {
         return None;
     }
@@ -69,6 +72,16 @@ pub fn standing_hint(
     // which faces away from the player.
     let body = |canonical: &str| {
         let states: Map<String, Value> = serde_json::from_str(canonical).ok()?;
+        if name == "minecraft:crafter" {
+            let front = states.get("orientation")?["value"]
+                .as_str()?
+                .split('_')
+                .next()?;
+            return ["down", "up", "north", "south", "west", "east"]
+                .iter()
+                .position(|face| *face == front)
+                .map(|face| face as u8);
+        }
         let value = &states
             .get("minecraft:facing_direction")
             .or_else(|| states.get(P::FacingDirection.name()))?["value"];
@@ -112,6 +125,20 @@ pub(crate) fn named_states(
                 Value::from(body_facing(position, player, yaw, 0.)?),
             )?;
             set_bit(&mut states, "open_bit", false)?;
+        }
+        "minecraft:crafter" => {
+            // Stock 1.26.60: vertical front follows body proximity, and the
+            // second direction keeps the reported yaw even for a vertical front.
+            let side = ["north", "east", "south", "west"][yaw_quadrant(yaw)?];
+            let facing = body_facing(position, player, yaw, 0.)?;
+            let orientation = match facing {
+                0 => format!("down_{side}"),
+                1 => format!("up_{side}"),
+                _ => format!("{side}_up"),
+            };
+            set_value(&mut states, "orientation", Value::from(orientation))?;
+            set_bit(&mut states, "crafting", false)?;
+            set_bit(&mut states, "triggered_bit", false)?;
         }
         "minecraft:calibrated_sculk_sensor" | "minecraft:campfire" | "minecraft:soul_campfire" => {
             set_value(

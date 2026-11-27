@@ -9,7 +9,7 @@ use std::{
     process::{Command, Output},
 };
 
-const TITLE: &str = "Select up to 8 schematics for one library";
+const TITLE: &str = "Select up to 16 schematics for one library";
 const PATTERNS: &str = "*";
 
 pub fn run() {

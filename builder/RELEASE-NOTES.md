@@ -1,3 +1,20 @@
+# Cinnamatica 0.3.69
+
+- Add optional V3 Support mode using real inventory blocks and ordinary placement packets. Prefer intended schematic supports, otherwise inexpensive available materials. Confirm each stage with server block receipts. Keep supports needed by gravity/survival blocks; clean up only unchanged, confirmed, expendable supports with normal timed mining.
+- Keep V1/V2; always correct placement orientation, and keep nearby single-click assist enabled. Hold-to-place continues to follow the crosshair.
+- Remove redundant assisted repeat timing and repeated waits for an already-sent orientation. Rebase walking vectors during placement-facing changes so the server receives the same world-space walking direction.
+- Bound Materials counting inside each tile and palette group; add Whole build / Current layer scope. Separate Paste's Remove wrong blocks option, organize directional movement/rotation/layers, and add exact 0–100% ghost lightness (default 5%) plus native render-range controls.
+
+- V3 Support now covers more blocks: floor, wall and hanging signs, hanging and twisting vines, wall and floor torches, buttons, banners, candles, turtle and sniffer eggs, glow lichen and sculk veins, both halves of beds, and sideways logs and pillars. Supports a block needs to stay attached are kept; heads and daylight sensors no longer get one. When no cheap material is carried it falls back to other plain building blocks, and creative players take dirt from the catalogue.
+- V3 checks the soil under saplings, flowers, grass, ferns, cactus, sugar cane, nether wart, crops and nether roots and fungi. It warns in chat when the block below is wrong, and creative players get the needed soil block placed when the cell is empty.
+- Add a "Highlight needed items" switch in Settings (on by default) to turn off the inventory and container item highlights.
+- Windows: one stable AppUserModelID (Ahwfr.Cinnamatica) for the launcher, the game window and the installer shortcuts; the installer offers an optional Desktop shortcut.
+- Normalize double slabs to full blocks throughout imports, materials and previews.
+- Fix independent guide anchors and crossed eyeblossom previews; correct the pale moss test sample.
+- Add categorized test exports and a paged 16-entry library without increasing its byte allocation.
+- Keep normal daylight sensors yellow until manually inverted.
+- Update to latest upstream Cinnabar source 8ae394f50 while preserving fork functionality. See BLOCK-COVERAGE-0.3.69.md for validation and remaining server limitations.
+
 # Cinnamatica 0.3.68
 
 - Fix reproduced guest fuel exhaustion when switching large schematics by retiring their state maps in bounded callbacks.

@@ -41,6 +41,8 @@ mod build;
 pub(crate) mod creative;
 mod orientation;
 mod preview;
+pub(crate) mod support;
+mod support_state;
 mod world_observation;
 use world_observation::use_surroundings;
 pub(crate) mod ordered;
@@ -54,7 +56,7 @@ pub(crate) struct BlockUseContext<'w, 's> {
     frame: Res<'w, bevy::diagnostic::FrameCount>,
     origin: Res<'w, InteractionOriginSnapshot>,
     view: Res<'w, LocalViewPose>,
-    ui: Res<'w, UiRuntimeResource>,
+    ui: ResMut<'w, UiRuntimeResource>,
     focus: Res<'w, client_state::ScreenFocus>,
     windows: Query<'w, 's, &'static Window, With<PrimaryWindow>>,
     client_world: ResMut<'w, ClientWorld>,

@@ -15,7 +15,8 @@ const FILE_LIMIT: usize = 64 * 1024 * 1024;
 
 /// Extensions with a dedicated decoder. Any other name is still accepted when its contents
 /// match a supported format.
-const KNOWN_EXTENSIONS: [&str; 6] = [
+const KNOWN_EXTENSIONS: [&str; 7] = [
+    "scb",
     "mcstructure",
     "nbt",
     "litematic",
@@ -50,6 +51,7 @@ pub fn import(path: &Path) -> Result<Schematic> {
 
 fn import_bytes(data: &[u8], name: String, ext: &str) -> Result<Schematic> {
     let primary = match ext {
+        "scb" => blueprint::decode(data).map_err(anyhow::Error::msg),
         "mcstructure" => import_bedrock(data, name.clone()),
         "nbt" | "gz" => gunzip(data).and_then(|plain| import_java_structure(&plain, name.clone())),
         "litematic" | "schem" | "schematic" => {
@@ -73,6 +75,9 @@ fn import_bytes(data: &[u8], name: String, ext: &str) -> Result<Schematic> {
 
 /// Tries every supported format in turn, so a file with any name still imports.
 fn sniff(data: &[u8], name: String) -> Result<Schematic> {
+    if data.starts_with(b"SCB1") || data.starts_with(b"SCB2") {
+        return blueprint::decode(data).map_err(anyhow::Error::msg);
+    }
     let attempts: [(&str, fn(&[u8], String) -> Result<Schematic>); 5] = [
         ("Bedrock structure", |data, name| import_bedrock(data, name)),
         ("Java structure", |data, name| {

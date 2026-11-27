@@ -78,6 +78,21 @@ struct PredictedStack {
     stack: VerifiedNetworkItemStack,
 }
 
+/// A ledger-verified right-click armor equip the owner may apply immediately.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArmorEquip {
+    /// The source hotbar slot.
+    pub slot: u8,
+    /// The source slot's authoritative revision when the ledger verified the swap.
+    pub revision: u64,
+    /// The held armor stack in `slot`.
+    pub from: VerifiedNetworkItemStack,
+    /// The destination armor container slot: `0` head through `3` feet or `4` body.
+    pub armor_slot: u8,
+    /// The armor worn in `armor_slot`, or an empty stack.
+    pub worn: VerifiedNetworkItemStack,
+}
+
 /// One unsent tick's view of the use input and the selected stack.
 #[derive(Debug, Clone, PartialEq)]
 pub struct UseFrame {
@@ -98,6 +113,9 @@ pub struct UseFrame {
     pub charge_projectile: Option<assets::item_use::ItemProjectileRole>,
     /// A block interaction, placement or recent attack consumed this press.
     pub press_consumed: bool,
+    /// The aimed block's own use takes a held Use, so the item's held repeat waits: vanilla's
+    /// build action gives an interactive block the use instead of the held item.
+    pub target_takes_use: bool,
 }
 
 /// Transactions in send order, plus what the local player did on this tick.
@@ -162,6 +180,13 @@ pub struct ItemUseRuntime {
     predicted: Option<PredictedStack>,
     /// The admitted throw change and its source revision, until the inventory ledger takes it.
     inventory_change: Option<(u8, u64, PredictedSlotChange)>,
+    /// The ledger's verified armor equip for the current frame.
+    armor_equip: Option<ArmorEquip>,
+    /// Whether the selected stack is armor the server may equip, even when the
+    /// ledger cannot show the swap yet.
+    armor_use: bool,
+    /// The admitted armor equip and its source revision, until the inventory ledger takes it.
+    armor_change: Option<(u64, protocol::ArmorEquipChange)>,
     /// The use button has stayed down since a press no block interaction consumed.
     repeat_armed: bool,
     /// Real release authority, separate from speculative queued button lookahead.
@@ -417,12 +442,32 @@ impl ItemUseRuntime {
         self.brush_effects_until = 0;
         self.predicted = None;
         self.inventory_change = None;
+        self.armor_equip = None;
+        self.armor_use = false;
+        self.armor_change = None;
         self.crossbows.clear();
     }
 
     /// Takes an admitted throw's inventory change once, including nonempty remainders.
     pub fn take_inventory_change(&mut self) -> Option<(u8, u64, PredictedSlotChange)> {
         self.inventory_change.take()
+    }
+
+    /// Observes the ledger's armor equip facts for the current selection,
+    /// replacing any earlier plan.
+    ///
+    /// `equip` is present when the swap can be shown immediately; `armor_use`
+    /// also covers armor whose swap the ledger refuses to predict, so a held
+    /// button never repeats the server-side equip.
+    pub fn observe_armor_equip(&mut self, equip: Option<ArmorEquip>, armor_use: bool) {
+        self.armor_equip = equip;
+        self.armor_use = armor_use;
+    }
+
+    /// Takes an admitted armor equip and its source revision once, after its
+    /// click-air transaction was sent.
+    pub fn take_armor_change(&mut self) -> Option<(u64, protocol::ArmorEquipChange)> {
+        self.armor_change.take()
     }
 
     /// Whether a press or observed release still awaits packet admission.
@@ -477,10 +522,13 @@ impl ItemUseRuntime {
         self.cooldowns.retain(|(_, until)| frame.tick < *until);
         self.observe_use_button(frame.held);
         let release = std::mem::take(&mut self.release);
-        self.end_use(frame, &mut outcome, release);
+        let completed = self.end_use(frame, &mut outcome, release);
         let ended = was_using && self.active.is_none();
-        if self.active.is_none() && (pressed || frame.held) {
-            self.try_use(frame, pressed, pulse, &mut outcome);
+        // A press made while the use was still running does nothing, as vanilla's build action
+        // ignores presses while an item is in use; only the held button repeats once it ends.
+        let fresh = pressed && !completed;
+        if self.active.is_none() && (fresh || frame.held) {
+            self.try_use(frame, fresh, pulse && fresh, &mut outcome);
         }
         if !frame.held {
             self.repeat_armed = false;
@@ -494,11 +542,18 @@ impl ItemUseRuntime {
         outcome
     }
 
-    fn end_use(&mut self, frame: &UseFrame, outcome: &mut UseOutcome, release: ReleaseState) {
+    /// Returns whether the use completed by running out its duration, rather than ending on a
+    /// release or reselection.
+    fn end_use(
+        &mut self,
+        frame: &UseFrame,
+        outcome: &mut UseOutcome,
+        release: ReleaseState,
+    ) -> bool {
         let release_pending = release.is_captured();
         let release_observed = !matches!(release, ReleaseState::Idle);
         let Some(active) = &self.active else {
-            return;
+            return false;
         };
         let mut selection = match &frame.selection {
             Some(_)
@@ -512,7 +567,7 @@ impl ItemUseRuntime {
                 // Switching away stops the use without a release, as vanilla does.
                 self.stop_active_use();
                 self.riptide_release = None;
-                return;
+                return false;
             }
             Some(current) => current.clone(),
             // An in-flight inventory request hides the stack; keep the one the use began with.
@@ -526,7 +581,7 @@ impl ItemUseRuntime {
             active.selection = selection.clone();
         }
         let Some(active) = &self.active else {
-            return;
+            return false;
         };
         let depleted =
             frame.tick.saturating_sub(active.started_tick) >= u64::from(active.max_ticks);
@@ -545,10 +600,10 @@ impl ItemUseRuntime {
                 );
             }
             self.stop_active_use();
-            return;
+            return true;
         }
         if (frame.held || !active.button_owned) && !release_pending && !release_observed {
-            return;
+            return false;
         }
         let launch = self.riptide_release.take().and_then(|release| {
             selection = release.selection;
@@ -563,6 +618,7 @@ impl ItemUseRuntime {
             outcome.released = true;
             self.riptide_launch = launch;
         }
+        false
     }
 
     /// Why a latched press sends nothing on this frame, for the click-drop trace; `None` when it
@@ -597,7 +653,8 @@ impl ItemUseRuntime {
             || self.use_tick_already_admitted(frame, pulse)
             || self.rearm_pending(frame, pulse)
             || (!pressed
-                && (!self.repeat_armed
+                && (frame.target_takes_use
+                    || !self.repeat_armed
                     || air_use.is_some_and(|air_use| !air_use.repeats_while_held())))
         {
             return;
@@ -609,6 +666,32 @@ impl ItemUseRuntime {
         let Some(legacy_request_id) = protocol::next_legacy_request_id() else {
             return;
         };
+        // The server equips armor even when the ledger could not predict the
+        // swap, so both paths must disarm the held repeat.
+        let equips_armor = self.armor_use && air_use.is_none();
+        // A held button must not swap an equipped piece back; only a fresh press equips.
+        let armor_change = self
+            .armor_equip
+            .as_ref()
+            .filter(|equip| {
+                pressed
+                    && air_use.is_none()
+                    && equip.slot == selection.slot
+                    && Some(equip.revision) == frame.inventory_revision
+                    && equip.from == selection.item
+            })
+            .map(|equip| {
+                (
+                    equip.revision,
+                    protocol::ArmorEquipChange {
+                        legacy_request_id,
+                        slot: equip.slot,
+                        armor_slot: equip.armor_slot,
+                        from: equip.from.clone(),
+                        to: equip.worn.clone(),
+                    },
+                )
+            });
         self.last_air_use = Some((frame.tick, selection.slot));
         self.rearm_millis = Some(frame.now_millis.saturating_add(USE_REARM_MILLIS));
         let cooldown = air_use.and_then(AirUse::cooldown);
@@ -668,7 +751,13 @@ impl ItemUseRuntime {
                 .inventory_revision
                 .map(|revision| (selection.slot, revision, change.clone()))
         });
-        if let Ok(packet) = protocol::click_air_packet(held_request(&selection, frame), change) {
+        let packet = match &armor_change {
+            Some((_, change)) => {
+                protocol::click_air_equip_packet(held_request(&selection, frame), change.clone())
+            }
+            None => protocol::click_air_packet(held_request(&selection, frame), change),
+        };
+        if let Ok(packet) = packet {
             outcome.packets.push(packet);
             outcome.used = true;
             outcome.started = active_use.is_some();
@@ -688,6 +777,13 @@ impl ItemUseRuntime {
             }
             if inventory_change.is_some() {
                 self.inventory_change = inventory_change;
+            }
+            if armor_change.is_some() || equips_armor {
+                // One equip per press; a held button must not swap the pieces back.
+                self.repeat_armed = false;
+            }
+            if let Some(change) = armor_change {
+                self.armor_change = Some(change);
             }
             if matches!(air_use, Some(AirUse::Instant { .. })) {
                 self.crossbows

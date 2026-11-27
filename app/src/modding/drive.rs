@@ -400,6 +400,10 @@ pub(super) fn drive_mod(
                     .as_ref()
                     .and(damage_shake.as_deref())
                     .and_then(|shake| shake.0),
+                camera
+                    .as_deref()
+                    .filter(|_| gameplay.live_world(&ui))
+                    .map(|camera| camera.player_perspective()),
             ),
         },
         |grants| {
@@ -504,12 +508,32 @@ pub(super) fn drive_mod(
             .hosts
             .iter_mut()
             .any(|host| host.placement_locked());
-        placement.offer = extension
-            .hosts
-            .iter_mut()
-            .find_map(|host| host.creative_placement_offer().cloned());
+        let chosen = extension.hosts.iter_mut().find_map(|host| {
+            host.creative_placement_offer().cloned().map(|offer| {
+                (
+                    offer,
+                    host.placement_supports().map(<[_]>::to_vec),
+                    host.touch_owner(),
+                )
+            })
+        });
+        let (offer, supports, owner) = chosen
+            .map_or((None, None, None), |(offer, supports, owner)| {
+                (Some(offer), supports, Some(owner))
+            });
+        placement.set_offer(offer, supports, owner);
     }
     if let Some(placement) = creative_placement.as_deref_mut() {
+        let owner = placement.support_owner();
+        placement.authorize_support(
+            enabled
+                && owner.is_some_and(|owner| {
+                    extension
+                        .hosts
+                        .iter_mut()
+                        .any(|host| host.is_active() && host.touch_owner() == owner)
+                }),
+        );
         placement.preview_wanted = enabled
             && extension
                 .hosts

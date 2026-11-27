@@ -3,6 +3,11 @@
 use super::Instance;
 
 impl Instance {
+    pub(crate) fn placement_supports(&self) -> Option<&[crate::CreativePlacementOffer]> {
+        self.is_active()
+            .then(|| self.store.data().item_use_policy.supports.as_deref())
+            .flatten()
+    }
     pub(crate) fn placement_locked(&self) -> bool {
         self.store.data().item_use_policy.locked
     }

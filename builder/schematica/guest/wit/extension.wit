@@ -989,6 +989,12 @@ interface item-use {
     offer-strict-placement: func(position: tuple<s32, s32, s32>, name: string, states: string) -> result<_, string>;
     /// Sets whether the offered placement can repeat under physically held use in this frame.
     set-placement-repeat: func(enabled: bool) -> result<_, string>;
+    /// Optional inventory-backed support assistance for this frame's offer.
+    /// The caller lists intended schematic cells within two blocks of the target.
+    /// Empty enables assistance with no intended neighbours; omission disables it.
+    /// Requires item-use, inventory and terrain. At most 32 unique cells, 16 KiB total.
+    record support-block { position: tuple<s32, s32, s32>, name: string, states: string }
+    offer-placement-supports: func(blocks: list<support-block>) -> result<_, string>;
     /// Limits normal block placement to the admitted schematic offer for this frame.
     /// Renews while a guide is active. Requires item-use and inventory grants.
     set-placement-lock: func(enabled: bool) -> result<_, string>;

@@ -134,6 +134,41 @@ fn main() {
         placement_facing::named_states("minecraft:barrel", &original, [1, -1, 0], player, 0.)
             .unwrap();
     assert_eq!(state["facing_direction"]["value"], json!(1));
+    let measured: Vec<serde_json::Value> =
+        serde_json::from_str(include_str!("body-facing-v2225.json")).unwrap();
+    assert_eq!(measured.len(), 24);
+    for fixture in &measured {
+        let name = fixture["block"].as_str().unwrap();
+        let original = serde_json::from_str(&record(name).canonical_state).unwrap();
+        let position = serde_json::from_value(fixture["position"].clone()).unwrap();
+        let bounds = (
+            serde_json::from_value(fixture["player_min"].clone()).unwrap(),
+            serde_json::from_value(fixture["player_max"].clone()).unwrap(),
+        );
+        let actual = placement_facing::named_states(
+            name,
+            &original,
+            position,
+            bounds,
+            fixture["yaw"].as_f64().unwrap() as f32,
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(&actual).unwrap(),
+            fixture["canonical"],
+            "{name}: {fixture}"
+        );
+        assert!(
+            records.iter().filter(|r| r.name.as_ref() == name).any(|r| {
+                serde_json::from_str::<serde_json::Value>(&r.canonical_state).unwrap()
+                    == fixture["canonical"]
+            }),
+            "predicted an unregistered state"
+        );
+    }
+    println!(
+        "PASS: 24 captured stock-server placements including all 12 crafter orientations and barrel directions"
+    );
     println!(
         "PASS: real-registry item routes, all bone/hay axes, measured sensor/camp/hive/bookshelf directions and body-height barrel orientation"
     );

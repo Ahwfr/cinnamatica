@@ -86,6 +86,7 @@ mod model;
 mod near_drawn;
 pub use near_drawn::TerrainPublicationCursor;
 mod particle_events;
+mod placement_receipts;
 mod polling;
 mod prediction;
 mod publication;
@@ -385,6 +386,7 @@ pub struct WorldStream {
     pending_decode: VecDeque<QueuedDecodeJob>,
     in_flight_decode_jobs: usize,
     predictions: prediction::DeferredPredictions,
+    placement_receipts: placement_receipts::PlacementReceipts,
     decode_tx: MailboxSender<DecodeCompletion>,
     decode_rx: Mailbox<DecodeCompletion>,
     biome_records: Option<Arc<meshing::biome_records::BiomeRecordCache>>,

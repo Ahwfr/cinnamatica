@@ -761,7 +761,10 @@ the next seat update. Behavioral coverage of these cases does not establish
 live-server movement acceptance.
 Authored base seats resolve mount scale and player riding height, then share the
 [native-origin conversion](docs/reference/rider-seat-origins.md) with streamed seat
-metadata for local and remote passenger placement. Unlocked player riders retain
+metadata for local and remote passenger placement. A passenger whose mount type has no
+seats and that streams no seat offset sits at the mount's origin, as vanilla's client places
+every passenger from its synced seat offset, which defaults to zero; the local player's
+inputs report that seat. Unlocked player riders retain
 look-driven body turns while seated, and explicit seat-facing locks still override
 the animation. Live bench camera/body alignment and special passenger families
 remain unqualified.
@@ -1438,7 +1441,10 @@ OS Alt-Tab acceptance on macOS, Windows and Linux remains incomplete.
   pops in its stack update; where that update falls among a frame's input is unverified, so the
   closing-frame fence is Cinnabar's choice. Launcher menu input, mod panels, consent and modal
   input still use their own checks because they aren't routed through the scene owner yet. Touch and
-  gamepad device acceptance of the owner remains incomplete.
+  gamepad device acceptance of the owner remains incomplete. Server form text boxes decide Ctrl and
+  Command edit shortcuts from the modifiers held at the end of the frame and skip them for a frame in
+  which Alt was held, so an Alt release followed by Ctrl+V within one frame types `v` instead of
+  pasting; per-press ordering of modifier changes within a frame remains incomplete.
   stable retained resources and correct supported DPI/aspect behavior. Tiled images
   retain full coverage with bounded repeat geometry across cropped regions and sliced
   borders; large collection admission and hardware frame-work acceptance remain incomplete.
@@ -1629,8 +1635,12 @@ OS Alt-Tab acceptance on macOS, Windows and Linux remains incomplete.
   PrivilegedBuilder with an empty hand, before the Build/Mine grant. Denied block presses
   report DenyDestroyBlock, an Attack swing, an abort and a missed swing. Creative presses
   with a no-break item report their destroy request, start and abort. Both keep existing
-  mining cancellation ahead of the refusal. The immutable-world setting, the WorldBuilder
-  bypass, allow/deny/border blocks and live mining acceptance remain incomplete.
+  mining cancellation ahead of the refusal. The highest allow or deny marker at or
+  below the edited cell governs its column: allow waives the Adventure list rule without
+  granting Build/Mine, deny admits only world builders, and the WorldBuilder ability also
+  edits the markers themselves. Server world changes are not gated. Immutable-world off,
+  border blocks, the refusal effect at the block centre, the destroy check's pre-scan
+  block bypass, scanning past unloaded cells and live mining acceptance remain incomplete.
   Server items whose `minecraft:shooter` draws start a held use that release ends;
   shooters with ammunition entries or `charge_on_draw` remain incomplete.
   A food or drink item that declares a zero use duration takes the standard 32-tick consume time,

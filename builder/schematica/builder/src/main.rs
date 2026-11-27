@@ -16,7 +16,23 @@ use std::{
 };
 use wasm_encoder::{ComponentNameSection, CustomSection, Encode};
 
+/// One stable Windows identity shared with the game window and the shortcuts, so a pinned
+/// taskbar icon keeps working across updates.
+#[cfg(windows)]
+fn set_app_identity() {
+    let id: Vec<u16> = "Ahwfr.Cinnamatica"
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    // SAFETY: `id` is a NUL-terminated UTF-16 string that outlives the call.
+    unsafe {
+        windows_sys::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID(id.as_ptr());
+    }
+}
+
 fn main() -> Result<()> {
+    #[cfg(windows)]
+    set_app_identity();
     let result = run();
     if let Err(error) = &result
         && (env::args_os().len() == 1

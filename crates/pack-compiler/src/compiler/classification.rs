@@ -1,8 +1,12 @@
 use assets::facts::{BlockRenderKind as R, block_render_fact};
 use {super::*, assets::BlockFace};
 
-pub(in crate::compiler) const fn is_terrestrial_cross(record: &RegistryRecord) -> bool {
+pub(in crate::compiler) fn is_terrestrial_cross(record: &RegistryRecord) -> bool {
     matches!(record.model_family, ModelFamily::Cross | ModelFamily::Crop)
+        || (record.model_family == ModelFamily::Unknown
+            && block_render_fact(&record.name).flat_icon
+            && super::visuals::cross::shape_traits(record)
+                .contains(assets::facts::shape::ShapeTraits::FLOWER))
 }
 
 pub(in crate::compiler) const fn is_torch(record: &RegistryRecord) -> bool {

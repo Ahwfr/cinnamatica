@@ -62,7 +62,7 @@ thread_local! {
     /// Where the guide of a copied selection goes: the box's minimum corner.
     static ADOPT_ORIGIN: Cell<Option<[i32; 3]>> = const { Cell::new(None) };
     static RUNTIME: RefCell<(Runtime, Vec<&'static [u8]>, Options, Option<usize>)> =
-        const { RefCell::new((Runtime::Start, Vec::new(), Options { hold_place: false, placement_lock: false, auto_layer: true, paste_destroy: false, textured: true, target_info: TargetInfo::Off, fast_place: false, strict_place: false, correct_aim: false, bridge_place: true, lightness: DEFAULT_LIGHTNESS, render_radius: 0, library_revision: 0, deleted_entries: Vec::new(), remember_placement: true, saved_placements: BTreeMap::new(), tool_item: true }, None)) };
+        const { RefCell::new((Runtime::Start, Vec::new(), Options { hold_place: false, placement_lock: false, auto_layer: true, paste_destroy: false, textured: true, target_info: TargetInfo::Off, fast_place: false, strict_place: false, support_place: false, materials_layer: false, correct_aim: true, bridge_place: true, lightness: DEFAULT_LIGHTNESS, render_radius: 0, library_revision: 0, deleted_entries: Vec::new(), remember_placement: true, item_highlights: true, saved_placements: BTreeMap::new(), tool_item: true }, None)) };
 }
 
 /// What the "Target info" setting shows for the targeted block.
@@ -121,20 +121,15 @@ impl TargetInfo {
 
 /// The "Ghost lightness" cycle: percent the ghost blocks blend toward light blue.
 pub(crate) const LIGHTNESS_LEVELS: [u8; 5] = [5, 10, 15, 25, 35];
-const DEFAULT_LIGHTNESS: u8 = LIGHTNESS_LEVELS[2];
+const DEFAULT_LIGHTNESS: u8 = 5;
 
-/// Reads the saved ghost lightness, bounded to the cycle. Older settings files hold a
+/// Reads saved ghost lightness as an exact percentage. Older settings files hold a
 /// see-through "opacity" or a white-blend "lightness" instead; neither applies any more,
 /// so they fall back to the default.
 fn saved_lightness(settings: &serde_json::Value) -> u8 {
     settings["ghost_tint"]
         .as_u64()
-        .map_or(DEFAULT_LIGHTNESS, |lightness| {
-            lightness.clamp(
-                u64::from(LIGHTNESS_LEVELS[0]),
-                u64::from(LIGHTNESS_LEVELS[LIGHTNESS_LEVELS.len() - 1]),
-            ) as u8
-        })
+        .map_or(DEFAULT_LIGHTNESS, |lightness| lightness.clamp(0, 100) as u8)
 }
 
 #[derive(Clone)]
@@ -147,6 +142,8 @@ struct Options {
     target_info: TargetInfo,
     fast_place: bool,
     strict_place: bool,
+    support_place: bool,
+    materials_layer: bool,
     correct_aim: bool,
     bridge_place: bool,
     /// Percent the ghost blocks blend toward light blue; one of `LIGHTNESS_LEVELS`.
@@ -156,6 +153,7 @@ struct Options {
     library_revision: u64,
     deleted_entries: Vec<usize>,
     remember_placement: bool,
+    item_highlights: bool,
     saved_placements: BTreeMap<String, serde_json::Value>,
     /// The tool item (a stick) drives builder modes while held. On by default, as in Litematica.
     tool_item: bool,
@@ -173,9 +171,11 @@ impl Options {
                 "assist": self.target_info != TargetInfo::Off, "target_info": self.target_info.key(),
                 "correct_aim": self.correct_aim,
                 "strict_place": self.strict_place,
+                "support_place": self.support_place,
+                "materials_layer": self.materials_layer,
                 "placement_lock": self.placement_lock,
                 "bridge_place": self.bridge_place,
-                "remember_placement": self.remember_placement, "saved_placements": self.saved_placements,
+                "remember_placement": self.remember_placement, "item_highlights": self.item_highlights, "saved_placements": self.saved_placements,
                 "ghost_tint": self.lightness,
                 "render_radius": self.render_radius,
                 "tool_item_enabled": self.tool_item,
@@ -224,12 +224,13 @@ impl Guest for Schematica {
                 options.target_info = TargetInfo::saved(&value);
                 options.fast_place = value["fast_place"].as_bool().unwrap_or(options.fast_place);
                 options.strict_place = value["strict_place"].as_bool().unwrap_or(false);
+                options.support_place = value["support_place"].as_bool().unwrap_or(false);
+                options.materials_layer = value["materials_layer"].as_bool().unwrap_or(false);
                 options.placement_lock = value["placement_lock"].as_bool().unwrap_or(false);
-                options.correct_aim = value["correct_aim"]
-                    .as_bool()
-                    .unwrap_or(options.correct_aim);
-                options.bridge_place = value["bridge_place"].as_bool().unwrap_or(true);
+                options.correct_aim = true;
+                options.bridge_place = true;
                 options.remember_placement = value["remember_placement"].as_bool().unwrap_or(true);
+                options.item_highlights = value["item_highlights"].as_bool().unwrap_or(true);
                 options.saved_placements = saved_placements::load(&value["saved_placements"]);
                 options.library_revision = value["library_revision"].as_u64().unwrap_or(0);
                 options.deleted_entries = value["deleted_entries"]
@@ -485,8 +486,10 @@ struct Viewer {
     /// A window refresh held over from a frame without enough fuel left for it.
     browser_refresh_pending: bool,
     browser_counts: std::cell::RefCell<browser::MaterialPageCounts>,
+    browser_layer_counts: std::cell::RefCell<browser::LayerMaterials>,
     inventory: std::cell::RefCell<browser::InventoryCache>,
     library: Vec<String>,
+    library_page: usize,
     /// Library entry sizes, matching `library`.
     library_sizes: Vec<[i32; 3]>,
     active_entry: Option<usize>,
@@ -573,6 +576,7 @@ impl Viewer {
             browser_names: Default::default(),
             browser_refresh_pending: false,
             browser_counts: Default::default(),
+            browser_layer_counts: Default::default(),
             inventory: Default::default(),
             library_sizes: Vec::new(),
             library,
@@ -586,6 +590,7 @@ impl Viewer {
             highlight_delay: 0,
             active_entry: None,
             request: None,
+            library_page: 0,
             releasing: false,
             loaded,
             auto_place: loaded,
@@ -917,7 +922,7 @@ impl Viewer {
                 // A held click must acquire each new ghost on the current crosshair ray.
                 // Nearby assist may choose an off-ray cell only in the single-click mode.
                 aimed
-            } else if self.options.strict_place || inside_ghost {
+            } else if self.options.strict_place || self.options.support_place || inside_ghost {
                 aimed
                     .or_else(|| native.filter(|pos| Some(*pos) != eye_cell))
                     .or_else(|| {
@@ -928,7 +933,7 @@ impl Viewer {
                     })
             } else {
                 native.or_else(|| {
-                    (self.options.correct_aim && self.options.bridge_place)
+                    (self.options.fast_place)
                         .then(|| self.bridge_ghost(world_target, use_held))
                         .flatten()
                 })
@@ -942,9 +947,9 @@ impl Viewer {
         {
             let block = unlit_variant(placement.transform_state(block));
             let states = overlay::canonical(&block);
-            let offer = if self.options.strict_place {
+            let offer = if self.options.strict_place || self.options.support_place {
                 item_use::offer_strict_placement((x, y, z), &block.name, &states)
-            } else if self.options.correct_aim || inside_ghost {
+            } else if self.options.fast_place || inside_ghost {
                 item_use::offer_oriented_placement((x, y, z), &block.name, &states)
             } else {
                 item_use::offer_creative_placement((x, y, z), &block.name, &states)
@@ -954,6 +959,35 @@ impl Viewer {
                 return;
             }
             let _ = item_use::set_placement_repeat(self.options.hold_place);
+            if self.options.support_place {
+                let mut neighbours = Vec::new();
+                for dx in -2i32..=2 {
+                    for dy in -2i32..=2 {
+                        for dz in -2i32..=2 {
+                            if !(1..=2).contains(&(dx.abs() + dy.abs() + dz.abs())) {
+                                continue;
+                            }
+                            let pos = [x + dx, y + dy, z + dz];
+                            if let Some(state) = placement
+                                .world_to_local(self.schematic.size(), pos)
+                                .and_then(|local| self.schematic.get(local))
+                                .filter(|state| !state.is_air() && !state.is_placement_artifact())
+                            {
+                                let world = pos;
+                                let state = unlit_variant(placement.transform_state(state));
+                                neighbours.push(item_use::SupportBlock {
+                                    position: (world[0], world[1], world[2]),
+                                    name: state.name.clone(),
+                                    states: overlay::canonical(&state),
+                                });
+                            }
+                        }
+                    }
+                }
+                if let Err(error) = item_use::offer_placement_supports(&neighbours) {
+                    self.show_label(&format!("Support placement | {error}"));
+                }
+            }
         }
         self.keep_prediction();
         if publish_highlights && budget::remaining_fuel() >= 600_000 {
@@ -1543,6 +1577,15 @@ impl Viewer {
 
     /// Publishes required item names for the selected layers, less verified placed cells.
     fn publish_item_highlights(&mut self) {
+        if !self.options.item_highlights {
+            if !self.last_item_highlights.is_empty() {
+                let _ = hud::set_item_highlights(&[]);
+                self.last_item_highlights.clear();
+            }
+            self.highlight_publication = None;
+            self.highlight_scan = None;
+            return;
+        }
         if self.highlight_publication.is_some() {
             self.publish_highlight_names();
             return;
@@ -1888,6 +1931,7 @@ pub(crate) fn unlit_name(name: &str) -> Option<&'static str> {
         "minecraft:lit_redstone_lamp" => "minecraft:redstone_lamp",
         "minecraft:lit_redstone_ore" => "minecraft:redstone_ore",
         "minecraft:lit_deepslate_redstone_ore" => "minecraft:deepslate_redstone_ore",
+        "minecraft:daylight_detector_inverted" => "minecraft:daylight_detector",
         // The redstone torch item places a lit torch; the world turns it off when powered.
         "minecraft:unlit_redstone_torch" => "minecraft:redstone_torch",
         _ => return None,

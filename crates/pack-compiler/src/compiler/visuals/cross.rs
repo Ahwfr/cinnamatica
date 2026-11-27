@@ -119,7 +119,7 @@ pub(in crate::compiler) fn compile_rule(
 }
 
 /// Reads plant membership from the same shape rules that compile selection bounds.
-fn shape_traits(record: &RegistryRecord) -> assets::facts::shape::ShapeTraits {
+pub(in crate::compiler) fn shape_traits(record: &RegistryRecord) -> assets::facts::shape::ShapeTraits {
     use assets::facts::{rules, shape::ShapeTraits};
     let Ok(state) = serde_json::from_str(&record.canonical_state) else {
         return ShapeTraits::empty();

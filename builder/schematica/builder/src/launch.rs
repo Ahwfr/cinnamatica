@@ -222,7 +222,8 @@ pub fn append_imports(mods: &Path, inputs: &[PathBuf]) -> Result<()> {
     let settings = fs::read_to_string(mods.join("schematica-builder.settings.json"))
         .ok()
         .and_then(|raw| serde_json::from_str(&raw).ok());
-    if prune_deleted(&mut entries, revision, settings.as_ref()) {
+    if entries.len() + inputs.len() > blueprint::MAX_LIBRARY
+        && prune_deleted(&mut entries, revision, settings.as_ref()) {
         // Indices shifted, so a new revision makes the guest drop stale removals and placements.
         revision = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos() as u64;
     }

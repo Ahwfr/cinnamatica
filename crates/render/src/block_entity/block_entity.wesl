@@ -179,9 +179,17 @@ fn block_entity_overlay(input: VertexOutput) -> @location(0) vec4<f32> {
     if (alpha < 0.02) {
         discard;
     }
-    return vec4(ghost_colour(input, texel.rgb * input.color.rgb, ghost_edges), alpha);
+    if ((input.actor_light & 0x10000000u) != 0u) {
+        return vec4(ghost_colour(input, texel.rgb * input.color.rgb, ghost_edges), alpha);
+    }
+    if (input.actor_light != 0u) {
+        // Entity-lit translucent parts, such as conduit wind, compose with the shared
+        // lightmap in gamma like the solid pass.
+        let gamma = tint_to_gamma(texel).rgb * input.color.rgb * input.native_lighting;
+        return tint_to_linear(vec4(actor_distance_fog(gamma, input.world_position, view.world_position), alpha));
+    }
+    return vec4(texel.rgb * input.color.rgb, alpha);
 }
-
 // RGB565 wash and 8-bit strength occupy scalar ghost light words only.
 // Quad UV derivatives keep the outline thin in pixels at every model size.
 fn ghost_line(input: VertexOutput) -> f32 {

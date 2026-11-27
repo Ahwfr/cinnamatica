@@ -170,6 +170,23 @@ impl Placement {
                 }
             }
             // 16 steps, 0 = south, 4 = west, 8 = north, 12 = east
+            ("orientation" | "minecraft:orientation", Str(orientation)) => {
+                let Some((front, top)) = orientation.split_once('_') else {
+                    return v.clone();
+                };
+                if !((matches!(front, "up" | "down") && Dir::from_name(top).is_some())
+                    || (Dir::from_name(front).is_some() && top == "up"))
+                {
+                    return v.clone();
+                }
+                let transform = |part: &str| {
+                    Dir::from_name(part).map_or_else(
+                        || part.to_owned(),
+                        |dir| self.apply_dir(dir).name().to_owned(),
+                    )
+                };
+                Str(format!("{}_{}", transform(front), transform(top)))
+            }
             ("ground_sign_direction", Int(i)) => {
                 let mut i = i.rem_euclid(16);
                 i = match self.mirror {
@@ -181,6 +198,55 @@ impl Placement {
             }
             _ => v.clone(),
         }
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn crafter_orientations_follow_rotation_and_mirror_for_both_directions() {
+    let mut turn = Placement::new([0; 3]);
+    turn.rotate_cw();
+    for (before, after) in [
+        ("north_up", "east_up"),
+        ("east_up", "south_up"),
+        ("south_up", "west_up"),
+        ("west_up", "north_up"),
+        ("up_north", "up_east"),
+        ("up_east", "up_south"),
+        ("up_south", "up_west"),
+        ("up_west", "up_north"),
+        ("down_north", "down_east"),
+        ("down_east", "down_south"),
+        ("down_south", "down_west"),
+        ("down_west", "down_north"),
+    ] {
+        let state = BlockState::new("minecraft:crafter")
+            .with("orientation", StateValue::Str(before.into()));
+        assert_eq!(
+            turn.transform_state(&state).states["orientation"],
+            StateValue::Str(after.into())
+        );
+        let mut restored = state.clone();
+        for _ in 0..4 {
+            restored = turn.transform_state(&restored)
+        }
+        assert_eq!(restored, state);
+    }
+    for (mirror, before, after) in [
+        (Mirror::X, "east_up", "west_up"),
+        (Mirror::X, "up_east", "up_west"),
+        (Mirror::Z, "down_north", "down_south"),
+    ] {
+        let p = Placement {
+            origin: [0; 3],
+            quarter_turns: 0,
+            mirror,
+        };
+        let state = BlockState::new("minecraft:crafter")
+            .with("orientation", StateValue::Str(before.into()));
+        let result = p.transform_state(&state);
+        assert_eq!(result.states["orientation"], StateValue::Str(after.into()));
+        assert_eq!(p.transform_state(&result), state);
     }
 }
 

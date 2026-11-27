@@ -1,3 +1,7 @@
+# Cinnamatica 0.3.69 update
+
+Update the native runtime, asset compiler, importer and guest together. Keep the companion App folder. Original schematic inputs, profile, worlds and saved placement indices are preserved; this update does not edit an existing schematic library. The categorized test sets (Working, Known issues, Unverified fixes) are separate exports in the source tree, not automatic library changes. Superseded files are archived. A Windows installer (per-user, Start menu entry and optional Desktop shortcut, one stable app identity so a taskbar pin keeps working across updates) and the portable ZIP are both published for this version; the installer is not code-signed, so Windows may show a publisher prompt. Uninstalling never deletes worlds, schematics or the profile.
+
 # Installing and updating Builder
 
 0.3.68 updates the client, importer and guest together. Keep the entire portable

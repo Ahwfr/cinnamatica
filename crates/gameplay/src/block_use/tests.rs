@@ -233,6 +233,35 @@ fn surroundings(clicked: &str, neighbor: &str) -> UseSurroundings {
 }
 
 #[test]
+fn candles_use_pristine_cake_instead_of_predicting_an_adjacent_block() {
+    let candle = verified(network_item(2, 77));
+    let survival = GameModeCapabilities::for_mode(PlayerGameMode::Survival);
+    let mut around = surroundings("minecraft:cake", "minecraft:stone");
+    around.held = block_fact("minecraft:blue_candle");
+    around.clicked_canonical_state = Some(r#"{"bite_counter":{"type":"int","value":0}}"#.into());
+    assert_eq!(
+        LocalUse::resolve(&candle, [2, 63, 0], 1, &around, &survival),
+        LocalUse::Interact
+    );
+    around.clicked_canonical_state = Some(r#"{"bite_counter":{"type":"int","value":1}}"#.into());
+    assert_ne!(
+        LocalUse::resolve(&candle, [2, 63, 0], 1, &around, &survival),
+        LocalUse::Interact
+    );
+    around.clicked_canonical_state = None;
+    assert_ne!(
+        LocalUse::resolve(&candle, [2, 63, 0], 1, &around, &survival),
+        LocalUse::Interact
+    );
+    around.clicked_canonical_state = Some(r#"{"bite_counter":{"type":"int","value":0}}"#.into());
+    around.held = block_fact("minecraft:stone");
+    assert_ne!(
+        LocalUse::resolve(&candle, [2, 63, 0], 1, &around, &survival),
+        LocalUse::Interact
+    );
+}
+
+#[test]
 fn local_use_decides_interaction_placement_or_nothing() {
     let block = verified(network_item(2, 77));
     let stick = verified(network_item(3, 0));

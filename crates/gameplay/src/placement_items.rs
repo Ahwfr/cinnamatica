@@ -1,7 +1,7 @@
 //! Which item builds a planned block, derived from registry names, the item route table and
 //! the installed pack's block visuals rather than per-block lists.
 
-use assets::{BlockFace, NetworkIdMode, RuntimeAssets, VisualKind, facts::PlacementRule};
+use assets::{BlockFace, NetworkIdMode, RuntimeAssets, facts::PlacementRule};
 
 use crate::movement::PhysicsCollisionRegistries;
 
@@ -36,6 +36,7 @@ pub fn predicts_named_orientation(name: &str) -> bool {
         "minecraft:observer"
             | "minecraft:dropper"
             | "minecraft:barrel"
+            | "minecraft:crafter"
             | "minecraft:chest"
             | "minecraft:trapped_chest"
             | "minecraft:ender_chest"
@@ -153,8 +154,9 @@ pub fn double_slab_full_block(
         .replace("_double_slab", "");
     let faces = |block: u32| {
         let visual = runtime.resolve_known(mode, block)?;
-        (visual.kind() == VisualKind::Cube)
-            .then(|| BlockFace::ALL.map(|face| visual.face(face).material_id()))
+        // Double slabs are compiled as full-height model geometry in the current
+        // carrier. Their six face-material bindings remain the canonical art.
+        Some(BlockFace::ALL.map(|face| visual.face(face).material_id()))
     };
     let wanted = faces(double_slab)?;
     collisions

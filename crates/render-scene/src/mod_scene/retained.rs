@@ -231,6 +231,21 @@ mod tests {
         frame.dimension = 1;
         assert!(resolve(&draw, &frame, &GlobalTransform::IDENTITY).is_none());
     }
+
+    #[test]
+    fn independent_world_guides_survive_origin_unload_but_not_dimension_changes() {
+        let mut frame = DrawingFrame { connection: 1, ..Default::default() };
+        let draw = instance(Anchor::World { dimension: 0, origin: [128., 70., -256.] });
+        let camera = GlobalTransform::from_translation(Vec3::new(300., 70., -256.));
+        let resolved = resolve(&draw, &frame, &camera).unwrap();
+        assert_eq!(resolved.transform[3][0], -172.);
+        assert!(frame.loaded_blocks.is_empty());
+        frame.dimension = 1;
+        assert!(resolve(&draw, &frame, &camera).is_none());
+        frame.dimension = 0;
+        frame.connection = 0;
+        assert!(resolve(&draw, &frame, &camera).is_none());
+    }
 }
 
 #[cfg(test)]

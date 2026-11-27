@@ -7,6 +7,7 @@
 
 pub mod diff;
 pub mod materials;
+pub mod normalization;
 pub mod placed;
 pub mod placement;
 pub mod schematic;

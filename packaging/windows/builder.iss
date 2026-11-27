@@ -42,8 +42,14 @@ Source: "{#PackagePath}\App\*"; DestDir: "{app}\App"; Excludes: "Cinnamatica-Sou
 ; The launcher used to be copied under its old name as well; the Start menu entry points at Cinnamatica.exe.
 Type: files; Name: "{app}\Cinnabar Builder.exe"
 
+[Tasks]
+Name: "desktopicon"; Description: "Create a &Desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: unchecked
+
 [Icons]
-Name: "{autoprograms}\Cinnamatica"; Filename: "{app}\Cinnamatica.exe"; WorkingDir: "{app}"
+; The same AppUserModelID as the launcher and game processes, so the Start menu entry, the
+; Desktop shortcut, a taskbar pin and the running windows are one app, before and after updates.
+Name: "{autoprograms}\Cinnamatica"; Filename: "{app}\Cinnamatica.exe"; WorkingDir: "{app}"; AppUserModelID: "Ahwfr.Cinnamatica"
+Name: "{autodesktop}\Cinnamatica"; Filename: "{app}\Cinnamatica.exe"; WorkingDir: "{app}"; AppUserModelID: "Ahwfr.Cinnamatica"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\Cinnamatica.exe"; Description: "Launch Cinnamatica"; Flags: nowait postinstall skipifsilent

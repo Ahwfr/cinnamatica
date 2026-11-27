@@ -79,3 +79,22 @@ For 0.3.62 the reported 23101 input was tested (67x5x62, 853 palette states,
 `Viewer::publish_item_highlights`; after that was fixed, Materials exhausted fuel
 while serializing the panel after preparing its rows. The updated probe completes
 more than 4,000 callbacks with the same per-frame allowance.
+
+## Fast 0.3.69 native regressions
+
+`candle-use.rs` includes the owning native cake interaction classifier and exercises
+all 17 registered candle types plus bitten/unreadable/denied/empty-hand controls.
+Link `assets` and `serde_json`. `ghost-model-light.rs` includes the owning mesh
+emitter and checks ghost wash/outline words, quad coordinates and gamma dye
+conversion. Link matching `assets`, `bytemuck`, `glam`, `render_api`, `render_model`.
+These avoid a cold whole-workspace test build. They do not certify live game behavior.
+
+`placement-rules.rs` also checks `body-facing-v2225.json`: 24 captured stock BDS
+1.26.60.6 Survival placements, including all twelve crafter states and six barrel
+faces across actual body heights. Fixtures use cheats-disabled item transactions;
+server console commands establish only the isolated test inventory and world.
+
+The categorized catalogue includes source and normalized states in JSON, with
+Working baseline / Known issues / Unverified fixes partitions and an optional
+18-station orientation export. Preserve source inputs and existing library indices
+when installing these. SCB exports use the same desktop import path on both OSes.

@@ -1,0 +1,746 @@
+[
+  {
+    "block": "minecraft:crafter",
+    "yaw": 0,
+    "position": [
+      1,
+      -60,
+      0
+    ],
+    "player_min": [
+      0.2,
+      -62,
+      0.2
+    ],
+    "player_max": [
+      0.8,
+      -60.2,
+      0.8
+    ],
+    "canonical": {
+      "crafting": {
+        "type": "byte",
+        "value": 0
+      },
+      "orientation": {
+        "type": "string",
+        "value": "down_north"
+      },
+      "triggered_bit": {
+        "type": "byte",
+        "value": 0
+      }
+    }
+  },
+  {
+    "block": "minecraft:crafter",
+    "yaw": 90,
+    "position": [
+      1,
+      -60,
+      0
+    ],
+    "player_min": [
+      0.2,
+      -62,
+      0.2
+    ],
+    "player_max": [
+      0.8,
+      -60.2,
+      0.8
+    ],
+    "canonical": {
+      "crafting": {
+        "type": "byte",
+        "value": 0
+      },
+      "orientation": {
+        "type": "string",
+        "value": "down_east"
+      },
+      "triggered_bit": {
+        "type": "byte",
+        "value": 0
+      }
+    }
+  },
+  {
+    "block": "minecraft:crafter",
+    "yaw": 180,
+    "position": [
+      1,
+      -60,
+      0
+    ],
+    "player_min": [
+      0.2,
+      -62,
+      0.2
+    ],
+    "player_max": [
+      0.8,
+      -60.2,
+      0.8
+    ],
+    "canonical": {
+      "crafting": {
+        "type": "byte",
+        "value": 0
+      },
+      "orientation": {
+        "type": "string",
+        "value": "down_south"
+      },
+      "triggered_bit": {
+        "type": "byte",
+        "value": 0
+      }
+    }
+  },
+  {
+    "block": "minecraft:crafter",
+    "yaw": 270,
+    "position": [
+      1,
+      -60,
+      0
+    ],
+    "player_min": [
+      0.2,
+      -62,
+      0.2
+    ],
+    "player_max": [
+      0.8,
+      -60.2,
+      0.8
+    ],
+    "canonical": {
+      "crafting": {
+        "type": "byte",
+        "value": 0
+      },
+      "orientation": {
+        "type": "string",
+        "value": "down_west"
+      },
+      "triggered_bit": {
+        "type": "byte",
+        "value": 0
+      }
+    }
+  },
+  {
+    "block": "minecraft:crafter",
+    "yaw": 0,
+    "position": [
+      1,
+      -60,
+      0
+    ],
+    "player_min": [
+      0.2,
+      -60,
+      0.2
+    ],
+    "player_max": [
+      0.8,
+      -58.2,
+      0.8
+    ],
+    "canonical": {
+      "crafting": {
+        "type": "byte",
+        "value": 0
+      },
+      "orientation": {
+        "type": "string",
+        "value": "north_up"
+      },
+      "triggered_bit": {
+        "type": "byte",
+        "value": 0
+      }
+    }
+  },
+  {
+    "block": "minecraft:crafter",
+    "yaw": 90,
+    "position": [
+      1,
+      -60,
+      0
+    ],
+    "player_min": [
+      0.2,
+      -60,
+      0.2
+    ],
+    "player_max": [
+      0.8,
+      -58.2,
+      0.8
+    ],
+    "canonical": {
+      "crafting": {
+        "type": "byte",
+        "value": 0
+      },
+      "orientation": {
+        "type": "string",
+        "value": "east_up"
+      },
+      "triggered_bit": {
+        "type": "byte",
+        "value": 0
+      }
+    }
+  },
+  {
+    "block": "minecraft:crafter",
+    "yaw": 180,
+    "position": [
+      1,
+      -60,
+      0
+    ],
+    "player_min": [
+      0.2,
+      -60,
+      0.2
+    ],
+    "player_max": [
+      0.8,
+      -58.2,
+      0.8
+    ],
+    "canonical": {
+      "crafting": {
+        "type": "byte",
+        "value": 0
+      },
+      "orientation": {
+        "type": "string",
+        "value": "south_up"
+      },
+      "triggered_bit": {
+        "type": "byte",
+        "value": 0
+      }
+    }
+  },
+  {
+    "block": "minecraft:crafter",
+    "yaw": 270,
+    "position": [
+      1,
+      -60,
+      0
+    ],
+    "player_min": [
+      0.2,
+      -60,
+      0.2
+    ],
+    "player_max": [
+      0.8,
+      -58.2,
+      0.8
+    ],
+    "canonical": {
+      "crafting": {
+        "type": "byte",
+        "value": 0
+      },
+      "orientation": {
+        "type": "string",
+        "value": "west_up"
+      },
+      "triggered_bit": {
+        "type": "byte",
+        "value": 0
+      }
+    }
+  },
+  {
+    "block": "minecraft:crafter",
+    "yaw": 0,
+    "position": [
+      1,
+      -60,
+      0
+    ],
+    "player_min": [
+      0.2,
+      -58,
+      0.2
+    ],
+    "player_max": [
+      0.8,
+      -56.2,
+      0.8
+    ],
+    "canonical": {
+      "crafting": {
+        "type": "byte",
+        "value": 0
+      },
+      "orientation": {
+        "type": "string",
+        "value": "up_north"
+      },
+      "triggered_bit": {
+        "type": "byte",
+        "value": 0
+      }
+    }
+  },
+  {
+    "block": "minecraft:crafter",
+    "yaw": 90,
+    "position": [
+      1,
+      -60,
+      0
+    ],
+    "player_min": [
+      0.2,
+      -58,
+      0.2
+    ],
+    "player_max": [
+      0.8,
+      -56.2,
+      0.8
+    ],
+    "canonical": {
+      "crafting": {
+        "type": "byte",
+        "value": 0
+      },
+      "orientation": {
+        "type": "string",
+        "value": "up_east"
+      },
+      "triggered_bit": {
+        "type": "byte",
+        "value": 0
+      }
+    }
+  },
+  {
+    "block": "minecraft:crafter",
+    "yaw": 180,
+    "position": [
+      1,
+      -60,
+      0
+    ],
+    "player_min": [
+      0.2,
+      -58,
+      0.2
+    ],
+    "player_max": [
+      0.8,
+      -56.2,
+      0.8
+    ],
+    "canonical": {
+      "crafting": {
+        "type": "byte",
+        "value": 0
+      },
+      "orientation": {
+        "type": "string",
+        "value": "up_south"
+      },
+      "triggered_bit": {
+        "type": "byte",
+        "value": 0
+      }
+    }
+  },
+  {
+    "block": "minecraft:crafter",
+    "yaw": 270,
+    "position": [
+      1,
+      -60,
+      0
+    ],
+    "player_min": [
+      0.2,
+      -58,
+      0.2
+    ],
+    "player_max": [
+      0.8,
+      -56.2,
+      0.8
+    ],
+    "canonical": {
+      "crafting": {
+        "type": "byte",
+        "value": 0
+      },
+      "orientation": {
+        "type": "string",
+        "value": "up_west"
+      },
+      "triggered_bit": {
+        "type": "byte",
+        "value": 0
+      }
+    }
+  },
+  {
+    "block": "minecraft:barrel",
+    "yaw": 0,
+    "position": [
+      1,
+      -60,
+      0
+    ],
+    "player_min": [
+      0.2,
+      -62,
+      0.2
+    ],
+    "player_max": [
+      0.8,
+      -60.2,
+      0.8
+    ],
+    "canonical": {
+      "facing_direction": {
+        "type": "int",
+        "value": 0
+      },
+      "open_bit": {
+        "type": "byte",
+        "value": 0
+      }
+    }
+  },
+  {
+    "block": "minecraft:barrel",
+    "yaw": 90,
+    "position": [
+      1,
+      -60,
+      0
+    ],
+    "player_min": [
+      0.2,
+      -62,
+      0.2
+    ],
+    "player_max": [
+      0.8,
+      -60.2,
+      0.8
+    ],
+    "canonical": {
+      "facing_direction": {
+        "type": "int",
+        "value": 0
+      },
+      "open_bit": {
+        "type": "byte",
+        "value": 0
+      }
+    }
+  },
+  {
+    "block": "minecraft:barrel",
+    "yaw": 180,
+    "position": [
+      1,
+      -60,
+      0
+    ],
+    "player_min": [
+      0.2,
+      -62,
+      0.2
+    ],
+    "player_max": [
+      0.8,
+      -60.2,
+      0.8
+    ],
+    "canonical": {
+      "facing_direction": {
+        "type": "int",
+        "value": 0
+      },
+      "open_bit": {
+        "type": "byte",
+        "value": 0
+      }
+    }
+  },
+  {
+    "block": "minecraft:barrel",
+    "yaw": 270,
+    "position": [
+      1,
+      -60,
+      0
+    ],
+    "player_min": [
+      0.2,
+      -62,
+      0.2
+    ],
+    "player_max": [
+      0.8,
+      -60.2,
+      0.8
+    ],
+    "canonical": {
+      "facing_direction": {
+        "type": "int",
+        "value": 0
+      },
+      "open_bit": {
+        "type": "byte",
+        "value": 0
+      }
+    }
+  },
+  {
+    "block": "minecraft:barrel",
+    "yaw": 0,
+    "position": [
+      1,
+      -60,
+      0
+    ],
+    "player_min": [
+      0.2,
+      -60,
+      0.2
+    ],
+    "player_max": [
+      0.8,
+      -58.2,
+      0.8
+    ],
+    "canonical": {
+      "facing_direction": {
+        "type": "int",
+        "value": 2
+      },
+      "open_bit": {
+        "type": "byte",
+        "value": 0
+      }
+    }
+  },
+  {
+    "block": "minecraft:barrel",
+    "yaw": 90,
+    "position": [
+      1,
+      -60,
+      0
+    ],
+    "player_min": [
+      0.2,
+      -60,
+      0.2
+    ],
+    "player_max": [
+      0.8,
+      -58.2,
+      0.8
+    ],
+    "canonical": {
+      "facing_direction": {
+        "type": "int",
+        "value": 5
+      },
+      "open_bit": {
+        "type": "byte",
+        "value": 0
+      }
+    }
+  },
+  {
+    "block": "minecraft:barrel",
+    "yaw": 180,
+    "position": [
+      1,
+      -60,
+      0
+    ],
+    "player_min": [
+      0.2,
+      -60,
+      0.2
+    ],
+    "player_max": [
+      0.8,
+      -58.2,
+      0.8
+    ],
+    "canonical": {
+      "facing_direction": {
+        "type": "int",
+        "value": 3
+      },
+      "open_bit": {
+        "type": "byte",
+        "value": 0
+      }
+    }
+  },
+  {
+    "block": "minecraft:barrel",
+    "yaw": 270,
+    "position": [
+      1,
+      -60,
+      0
+    ],
+    "player_min": [
+      0.2,
+      -60,
+      0.2
+    ],
+    "player_max": [
+      0.8,
+      -58.2,
+      0.8
+    ],
+    "canonical": {
+      "facing_direction": {
+        "type": "int",
+        "value": 4
+      },
+      "open_bit": {
+        "type": "byte",
+        "value": 0
+      }
+    }
+  },
+  {
+    "block": "minecraft:barrel",
+    "yaw": 0,
+    "position": [
+      1,
+      -60,
+      0
+    ],
+    "player_min": [
+      0.2,
+      -58,
+      0.2
+    ],
+    "player_max": [
+      0.8,
+      -56.2,
+      0.8
+    ],
+    "canonical": {
+      "facing_direction": {
+        "type": "int",
+        "value": 1
+      },
+      "open_bit": {
+        "type": "byte",
+        "value": 0
+      }
+    }
+  },
+  {
+    "block": "minecraft:barrel",
+    "yaw": 90,
+    "position": [
+      1,
+      -60,
+      0
+    ],
+    "player_min": [
+      0.2,
+      -58,
+      0.2
+    ],
+    "player_max": [
+      0.8,
+      -56.2,
+      0.8
+    ],
+    "canonical": {
+      "facing_direction": {
+        "type": "int",
+        "value": 1
+      },
+      "open_bit": {
+        "type": "byte",
+        "value": 0
+      }
+    }
+  },
+  {
+    "block": "minecraft:barrel",
+    "yaw": 180,
+    "position": [
+      1,
+      -60,
+      0
+    ],
+    "player_min": [
+      0.2,
+      -58,
+      0.2
+    ],
+    "player_max": [
+      0.8,
+      -56.2,
+      0.8
+    ],
+    "canonical": {
+      "facing_direction": {
+        "type": "int",
+        "value": 1
+      },
+      "open_bit": {
+        "type": "byte",
+        "value": 0
+      }
+    }
+  },
+  {
+    "block": "minecraft:barrel",
+    "yaw": 270,
+    "position": [
+      1,
+      -60,
+      0
+    ],
+    "player_min": [
+      0.2,
+      -58,
+      0.2
+    ],
+    "player_max": [
+      0.8,
+      -56.2,
+      0.8
+    ],
+    "canonical": {
+      "facing_direction": {
+        "type": "int",
+        "value": 1
+      },
+      "open_bit": {
+        "type": "byte",
+        "value": 0
+      }
+    }
+  }
+]

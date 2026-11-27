@@ -236,6 +236,18 @@ impl LocalUse {
         {
             return Self::Interact;
         }
+        // Cake is not an INTERACTIVE block, but using a candle on an uneaten
+        // cake consumes the candle in this cell rather than placing above it.
+        // Classify this before generic adjacent-cell placement/collision tests.
+        if candle::uses_cake(
+            surroundings.clicked,
+            surroundings.held,
+            surroundings.clicked_canonical_state.as_deref(),
+            holding,
+            caps.can_build,
+        ) {
+            return Self::Interact;
+        }
         if !caps.can_build || item.block_runtime_id() == 0 || item.count() == 0 {
             return Self::Nothing;
         }
@@ -476,14 +488,14 @@ impl BlockUseRuntime {
         self.due_interval(held, clock, None)
     }
 
-    /// Opt-in assisted holds admit at most twenty attempts per second, without
-    /// catching up old deadlines or changing ordinary vanilla repeat timing.
+    /// Assisted holds are gated by the native simulation tick. Do not impose a
+    /// second wall-clock deadline: tiny frame jitter otherwise skips a whole tick.
     pub fn due_assisted(
         &self,
         held: bool,
         clock: RepeatClock,
     ) -> Option<(ItemUseTrigger, Duration)> {
-        self.due_interval(held, clock, Some(50))
+        self.due_interval(held, clock, Some(0))
             .map(|(trigger, _)| (trigger, clock.now))
     }
 
@@ -778,6 +790,7 @@ pub fn use_packets(
 #[cfg(test)]
 mod tests;
 
+mod candle;
 mod respawn_anchor;
 
 mod admission;

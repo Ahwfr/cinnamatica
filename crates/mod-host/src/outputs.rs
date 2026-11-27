@@ -4,6 +4,10 @@ use super::{CameraDelta, ModHost};
 use std::sync::Arc;
 
 impl ModHost {
+    /// Support context belonging to this owner's committed placement offer.
+    pub fn placement_supports(&self) -> Option<&[crate::CreativePlacementOffer]> {
+        self.instance.placement_supports()
+    }
     /// Visual terrain rules are withdrawn with owner authority or activation.
     pub fn terrain_surface_rules(&self) -> &[mod_api::terrain_surface::Rule] {
         if self.is_active() {
