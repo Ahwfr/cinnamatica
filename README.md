@@ -5,21 +5,52 @@
 Import a Java schematic or a Bedrock structure, see it as a hologram in your world, and build it by hand or with Fast Place.
 
 > [!IMPORTANT]
-> **Not an official Minecraft product.** Not approved by or associated with Mojang or Microsoft. Minecraft is a trademark of Microsoft Corporation; its code and assets belong to Mojang and Microsoft under the [Minecraft EULA](https://www.minecraft.net/eula). Cinnamatica ships no Minecraft files. You need your own copy of the game, and packaged launches check that your Microsoft account owns it.
+> **Not an official Minecraft product.** Not approved by or associated with Mojang or Microsoft. Minecraft is a trademark of Microsoft Corporation; its code and assets belong to Mojang and Microsoft under the [Minecraft EULA](https://www.minecraft.net/eula). Cinnamatica ships no Minecraft files. You need your own copy of the game.
 
 ## Features
 
 - **Schematic import:** `.schematic`, `.schem`, `.litematic` and Bedrock `.mcstructure` files go into a library you can load at any time.
-- **Holograms:** missing and incorrect blocks show as ghosts, with materials lists and layer-by-layer views.
-- **Fast Place:** places the planned block, with the right item and orientation, from a nearby support face.
-  - **V1 Classic** clicks real supports only.
-  - **V2 Strict** checks the planned block state and can place compatible blocks straight into air.
-- **Hold to Place:** repeats Fast Place while you hold the use button.
-- **Target info:** a readout of the planned block, the real world block and Fast Place's prediction. Debug mode explains why a placement won't work.
+- **Target info:** shows the planned block, the real block and what Fast Place will do. Debug mode explains why a placement won't work.
 - **Container highlights:** chests and shulkers holding blocks you still need are outlined.
 - **Paste build:** places a whole schematic at once (Creative, operator only).
 
 Press **M** in-game to open the schematic menu. The [Cinnamatica guide](builder/README.md) covers every control and setting.
+
+### Easy Place: Fast Place and Hold to Place
+
+Look at a ghost block and click. Cinnamatica picks the right block, turns it the right way and places it. Hold the button to keep placing as you look around.
+
+<p align="center">
+  <img src="docs/media/cinnamatica/easy-place-showcase-1.gif" alt="Fast Place filling in a hologram block by block" width="600">
+</p>
+
+### Holograms
+
+Your schematic shows up as see-through ghost blocks. Missing blocks stay ghosts, wrong blocks are marked, and you can show one layer at a time so big builds stay readable.
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/media/cinnamatica/layer-showcase-bottom-up.gif" alt="Showing layers from the bottom up" width="400"></td>
+    <td align="center"><img src="docs/media/cinnamatica/layer-showcase-per-layer.gif" alt="Stepping through one layer at a time" width="400"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Bottom up:</b> everything up to the chosen layer</td>
+    <td align="center"><b>Layer by layer:</b> one layer at a time</td>
+  </tr>
+</table>
+
+### Move your schematic
+
+Use the placement tool to slide the hologram into place before you start building.
+
+<p align="center">
+  <img src="docs/media/cinnamatica/stick-movement.gif" alt="Moving a schematic hologram with the placement tool" width="600">
+</p>
+
+### Works in Survival
+
+Everything works in Survival just like in Creative. The only difference: in Survival, Fast Place uses the blocks in your inventory and hotbar instead of the Creative menu.
+
 
 ## Install
 
@@ -34,7 +65,31 @@ On first launch, Cinnamatica prepares the Minecraft assets it needs from your ow
 
 ## How it works
 
-Cinnamatica is Cinnabar with a building layer on top:
+A quick way to picture it: a Minecraft server is like a website, and the game you play with is like the web browser you visit it in.
+
+```mermaid
+flowchart LR
+    you(["You"]) --> cm
+    subgraph cm["Cinnamatica"]
+        direction TB
+        mod["Schematica mod<br/>schematics, holograms, Fast Place"]
+        client["Cinnabar client<br/>draws the world, moves you, talks to servers"]
+        mod --> client
+    end
+    game[("Your copy of<br/>Minecraft Bedrock")] -- "textures, sounds, models" --> client
+    client <-- "normal Bedrock connection" --> server["Any Bedrock server<br/>or your own world"]
+```
+
+**Minecraft Bedrock** is the official game from Mojang: the app you normally play in, plus the servers and worlds you join.
+
+**Cinnabar** is a different app that plays the same game. Think of using Firefox instead of Chrome: the websites are the same, only the browser changes. Cinnabar was written from scratch, but it speaks the same language as Bedrock servers, so servers see a normal Bedrock player. It doesn't come with any Minecraft textures, sounds or models. It reads them from your own copy of the game, which is why you need to own Minecraft.
+
+**Cinnamatica** is Cinnabar with a building tool added, a bit like a browser with an extension installed. Cinnabar still does the actual playing: drawing the world, moving you around and connecting to servers. The **Schematica mod** adds the schematic library, the holograms and Fast Place. The mod runs in a sandbox, so it can only do what Cinnabar allows.
+
+**Is Fast Place a hack?** Fast Place doesn't do anything a player couldn't do by hand. It picks the right block, puts it in your hand and aims for you, then sends the same placement a normal player sends. The server still decides whether the block goes down. Some servers don't allow building helpers, so check the rules before you use it.
+
+<details>
+<summary>For developers: where the code lives</summary>
 
 | Part | What it does | Where |
 | --- | --- | --- |
@@ -42,7 +97,7 @@ Cinnamatica is Cinnabar with a building layer on top:
 | **Schematica mod** | The schematic library, holograms, menus and Fast Place planning. It runs as a sandboxed WebAssembly mod through Cinnabar's mod API. | [`builder/schematica`](builder/schematica) |
 | **Launcher and packaging** | Builds, starts and packages Cinnamatica for each platform. | [`builder`](builder) |
 
-When you Fast Place, the mod chooses the target ghost block, and the client picks a support face, gets the item into your hand and sends a normal Bedrock placement, the same packets a vanilla client sends. The server always has the final say.
+</details>
 
 ## Documentation
 
@@ -61,3 +116,9 @@ When you Fast Place, the mod chooses the target ghost block, and the client pick
 ## License
 
 Cinnamatica keeps Cinnabar's [PolyForm Noncommercial license](LICENSE) and [third-party notices](THIRD_PARTY_NOTICES.md). The Schematica mod's own license is in [`builder/schematica/SCHEMATICA-LICENSE.txt`](builder/schematica/SCHEMATICA-LICENSE.txt).
+
+---
+
+<p align="center">
+  Built on <a href="https://github.com/cinnabar-mc/cinnabar"><b>Cinnabar</b></a>, an open Bedrock client.
+</p>
